@@ -603,6 +603,14 @@ def make_plots(df: pd.DataFrame, plot_dir: Path) -> None:
 
     plot_dual_fuel_metric(
         df,
+        y_col="Power_kW",
+        title="Power vs RPM",
+        filename="power_kw_vs_rpm.png",
+        y_label="Power (kW)",
+        plot_dir=plot_dir,
+    )
+    plot_dual_fuel_metric(
+        df,
         y_col="Consumo_kg_h",
         title="Mass fuel flow vs RPM",
         filename="consumo_massico_vs_rpm.png",

@@ -9,7 +9,7 @@ Repositório separado para o processamento FPT Diesel vs Etanol, sem dependênci
 - Pipeline principal: `pipeline_FPT.py`
 - Config principal: `config_pipeline_fpt.xlsx`
 - Dados locais esperados em `raw_FPT/`
-- Saídas locais geradas em `out_FPT/`
+- Saídas geradas em `out_FPT/` e versionadas neste repositório
 
 ## Entradas assumidas
 
@@ -43,6 +43,7 @@ Repositório separado para o processamento FPT Diesel vs Etanol, sem dependênci
 ## Plots principais
 
 - consumo mássico vs RPM
+- potência em kW vs RPM
 - consumo volumétrico vs RPM
 - custo horário vs RPM
 - `n_th` vs RPM
@@ -62,5 +63,7 @@ Repositório separado para o processamento FPT Diesel vs Etanol, sem dependênci
 ## Manutenção
 
 - ajustar `FILE_INCLUDE_REGEX` no config para trocar o par Diesel/E94H6
-- manter `raw_FPT/` e `out_FPT/` fora do Git
+- manter `raw_FPT/` fora do Git
+- versionar `out_FPT/` quando os resultados precisarem acompanhar o código
+- `xlsx` e `png` são marcados como binários em `.gitattributes`
 - se o layout dos `.xlsx` mudar, revisar primeiro a função `read_fpt_xlsx`

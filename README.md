@@ -24,7 +24,7 @@ Pipeline standalone para comparar um motor Diesel `D85B15` vs Etanol `E94H6` a p
 - `config_pipeline_fpt.xlsx`: configuração específica
 - `HANDOFF_FPT.md`: status atual e observações de manutenção
 - `raw_FPT/`: dados brutos locais, fora do Git
-- `out_FPT/`: saídas locais, fora do Git
+- `out_FPT/`: saídas geradas e versionadas neste repositório
 
 ## Como rodar
 
@@ -60,8 +60,14 @@ Parâmetros principais:
 - `out_FPT/compare_rpm_diesel_vs_e94h6_fpt.xlsx`
 - gráficos em `out_FPT/plots`
 
+Inclui também:
+
+- `out_FPT/plots/power_kw_vs_rpm.png`
+
 ## Observações
 
 - O eixo X dos gráficos usa `RPM` com grade fixa de `250 rpm`.
 - O reconhecimento de combustível no nome do arquivo aceita `D85B15`, `E94H6`, `ETHANOL` e `ETANOL`.
 - Se `horas/ano` e `diesel L/h` parecerem invertidos no config, o pipeline troca automaticamente e emite aviso.
+- Os arquivos `.xlsx` e `.png` são tratados como binários via `.gitattributes`.
+- `raw_FPT/` continua fora do Git; `out_FPT/` passa a ser versionado.
