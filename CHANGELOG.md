@@ -78,6 +78,7 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
 - A `BMEP` agora e calculada em `bar` pela relacao de 4 tempos com torque e cilindrada detectada do motor.
 - A curva do compressor agora usa `P_B_Compr` e `P_B_IC` como pressoes relativas, converte ambas para absolutas com base em `1013 mBar` e plota `PRatio_abs` contra potencia, vazao massica e vazao volumetrica.
 - A vazao volumetrica do compressor agora considera umidade relativa via `CAIR_H1` ou `RH air`; quando a umidade nao existe no arquivo, o pipeline assume `0% RH` e informa isso no log.
+- Corrigida a heuristica de conversao de pressao para preservar leituras negativas pequenas em `mBar` no `p b compr` do SWay; antes disso, o diesel do `C13` ficava com `PRatio_abs` invalido e sumia da curva do compressor.
 - A eficiencia volumetrica agora usa `1013 mBar` de referencia, `T_i_MF` como temperatura de referencia e cilindrada detectada pelo nome do arquivo (`NEF67/NEF6 -> 6,7 L`; `C13/Cursore 13/Cursor 13 -> 12,9 L`) com `6` cilindros.
 - A potencia dissipada no intercooler agora usa `Air_kg_h * cp_ar * (T_B_IC - T_i_MF)`, com `cp_ar = 1,005 kJ/kg.K`.
 - O fluxo do FPT agora salva o `lv_kpis_fpt.xlsx` bruto e so depois aplica o filtro manual de pontos para comparativos e plots.

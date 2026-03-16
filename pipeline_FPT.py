@@ -153,10 +153,19 @@ def _pressure_series_to_mbar(series: pd.Series) -> pd.Series:
     if finite.empty:
         return values
 
-    median = float(finite.median())
-    if median <= 20.0:
+    max_abs = float(finite.abs().max())
+    min_val = float(finite.min())
+    max_val = float(finite.max())
+
+    # Common cases in these FPT files:
+    # - ~0-2 bar sensors from the older bench layout
+    # - ~50-200 kPa signals on some channels/layouts
+    # - small negative vacuum readings already in mbar on SWay (`p b compr`)
+    if max_abs <= 5.0:
         return values * 1000.0
-    if median <= 400.0:
+    if max_abs <= 250.0:
+        if min_val < 0.0 and max_val <= 50.0:
+            return values
         return values * 10.0
     return values
 

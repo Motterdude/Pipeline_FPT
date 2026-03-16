@@ -133,6 +133,7 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
   - `CAIR_H1` ou `RH air` para a umidade relativa
   - `T_AIR` ou `Air_tAFS` para a temperatura de entrada
   - fallback de `0% RH` quando a umidade nao existir no arquivo
+  - no SWay, `p b compr` pode vir como vacuo leve negativo ja em `mBar`; isso nao pode mais ser reconvertido como `bar`, senao a curva diesel do compressor desaparece
 - a pressao de coletor entra automaticamente quando a planilha trouxer `P_i_MF` ou `p i MF`, e o pipeline normaliza a unidade final para `mBar`;
 - o torque entra automaticamente quando a planilha trouxer `M_dyno` ou `M dyno`; se faltar, o pipeline cai para `9550 * Power_kW / RPM`;
 - a `BMEP` e calculada em `bar` pela relacao de 4 tempos com torque e cilindrada detectada;
