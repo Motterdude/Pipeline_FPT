@@ -671,6 +671,8 @@ def compute_base_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
     out["Consumo_L_h"] = (consumo_kg_h * 1000.0 / fuel_density).where(fuel_density.gt(0), pd.NA)
     out["Custo_R_h"] = (pd.to_numeric(out["Consumo_L_h"], errors="coerce") * fuel_cost).where(fuel_cost.gt(0), pd.NA)
+    custo_r_h = pd.to_numeric(out["Custo_R_h"], errors="coerce")
+    out["Custo_R_kWh"] = (custo_r_h / power_kw).where(power_kw.gt(0), pd.NA)
     mdot = consumo_kg_h / 3600.0
     out["n_th"] = (power_kw / (mdot * lhv)).where((power_kw > 0) & (mdot > 0) & (lhv > 0), pd.NA)
     out["n_th_pct"] = pd.to_numeric(out["n_th"], errors="coerce") * 100.0
@@ -684,12 +686,13 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
         print("[WARN] Nao encontrei pontos D85B15 para baseline.")
         return out
 
-    baseline_cols = ["Pair_ID", "RPM", "Consumo_kg_h", "Consumo_L_h", "Custo_R_h", "n_th_pct", "Power_kW"]
+    baseline_cols = ["Pair_ID", "RPM", "Consumo_kg_h", "Consumo_L_h", "Custo_R_h", "Custo_R_kWh", "n_th_pct", "Power_kW"]
     diesel = diesel[baseline_cols].rename(
         columns={
             "Consumo_kg_h": "Diesel_Baseline_Consumo_kg_h",
             "Consumo_L_h": "Diesel_Baseline_Consumo_L_h",
             "Custo_R_h": "Diesel_Baseline_Custo_R_h",
+            "Custo_R_kWh": "Diesel_Baseline_Custo_R_kWh",
             "n_th_pct": "Diesel_Baseline_n_th_pct",
             "Power_kW": "Diesel_Baseline_Power_kW",
         }
@@ -703,11 +706,15 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
     cons_m_bl = pd.to_numeric(out["Diesel_Baseline_Consumo_kg_h"], errors="coerce")
     cons_v = pd.to_numeric(out["Consumo_L_h"], errors="coerce")
     cons_v_bl = pd.to_numeric(out["Diesel_Baseline_Consumo_L_h"], errors="coerce")
+    custo_kwh = pd.to_numeric(out["Custo_R_kWh"], errors="coerce")
+    custo_kwh_bl = pd.to_numeric(out["Diesel_Baseline_Custo_R_kWh"], errors="coerce")
     nth = pd.to_numeric(out["n_th_pct"], errors="coerce")
     nth_bl = pd.to_numeric(out["Diesel_Baseline_n_th_pct"], errors="coerce")
 
     out["Economia_vs_Diesel_R_h"] = (custo - custo_bl).where(custo_bl.gt(0), pd.NA)
     out["Economia_vs_Diesel_pct"] = (100.0 * (custo / custo_bl - 1.0)).where(custo_bl.gt(0), pd.NA)
+    out["Economia_vs_Diesel_R_kWh"] = (custo_kwh - custo_kwh_bl).where(custo_kwh_bl.gt(0), pd.NA)
+    out["Economia_vs_Diesel_R_kWh_pct"] = (100.0 * (custo_kwh / custo_kwh_bl - 1.0)).where(custo_kwh_bl.gt(0), pd.NA)
     out["Delta_Consumo_kg_h_vs_Diesel"] = cons_m - cons_m_bl
     out["Delta_Consumo_L_h_vs_Diesel"] = cons_v - cons_v_bl
     out["Delta_n_th_pct_vs_Diesel"] = nth - nth_bl
@@ -716,6 +723,8 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
     zero_cols = [
         "Economia_vs_Diesel_R_h",
         "Economia_vs_Diesel_pct",
+        "Economia_vs_Diesel_R_kWh",
+        "Economia_vs_Diesel_R_kWh_pct",
         "Delta_Consumo_kg_h_vs_Diesel",
         "Delta_Consumo_L_h_vs_Diesel",
         "Delta_n_th_pct_vs_Diesel",
@@ -811,6 +820,7 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
             "Consumo_kg_h": "Diesel_Consumo_kg_h",
             "Consumo_L_h": "Diesel_Consumo_L_h",
             "Custo_R_h": "Diesel_Custo_R_h",
+            "Custo_R_kWh": "Diesel_Custo_R_kWh",
             "n_th_pct": "Diesel_n_th_pct",
         }
     )
@@ -821,6 +831,7 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
             "Consumo_kg_h": "E94H6_Consumo_kg_h",
             "Consumo_L_h": "E94H6_Consumo_L_h",
             "Custo_R_h": "E94H6_Custo_R_h",
+            "Custo_R_kWh": "E94H6_Custo_R_kWh",
             "n_th_pct": "E94H6_n_th_pct",
         }
     )
@@ -834,6 +845,7 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
         "Diesel_Consumo_kg_h",
         "Diesel_Consumo_L_h",
         "Diesel_Custo_R_h",
+        "Diesel_Custo_R_kWh",
         "Diesel_n_th_pct",
     ]
     cols_right = [
@@ -844,9 +856,12 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
         "E94H6_Consumo_kg_h",
         "E94H6_Consumo_L_h",
         "E94H6_Custo_R_h",
+        "E94H6_Custo_R_kWh",
         "E94H6_n_th_pct",
         "Economia_vs_Diesel_R_h",
         "Economia_vs_Diesel_pct",
+        "Economia_vs_Diesel_R_kWh",
+        "Economia_vs_Diesel_R_kWh_pct",
     ]
     merged = diesel[cols_left].merge(ethanol[cols_right], on=["Pair_ID", "RPM"], how="inner")
     return merged.sort_values(["Pair_ID", "RPM"]).copy()
@@ -1101,6 +1116,14 @@ def make_plots(df: pd.DataFrame, plot_dir: Path) -> None:
     )
     plot_dual_fuel_metric(
         df,
+        y_col="Custo_R_kWh",
+        title="Specific fuel cost vs RPM",
+        filename="custo_especifico_r_kwh_vs_rpm.png",
+        y_label="Specific fuel cost (R$/kWh)",
+        plot_dir=plot_dir,
+    )
+    plot_dual_fuel_metric(
+        df,
         y_col="n_th_pct",
         title="n_th vs RPM",
         filename="nth_vs_rpm.png",
@@ -1121,6 +1144,22 @@ def make_plots(df: pd.DataFrame, plot_dir: Path) -> None:
         title="Relative economy vs diesel",
         filename="economia_pct_vs_rpm.png",
         y_label="Delta cost vs diesel (%)",
+        plot_dir=plot_dir,
+    )
+    plot_ethanol_delta(
+        df,
+        y_col="Economia_vs_Diesel_R_kWh",
+        title="Specific cost delta vs diesel",
+        filename="economia_r_kwh_vs_diesel_rpm.png",
+        y_label="Delta specific cost vs diesel (R$/kWh)",
+        plot_dir=plot_dir,
+    )
+    plot_ethanol_delta(
+        df,
+        y_col="Economia_vs_Diesel_R_kWh_pct",
+        title="Relative specific cost vs diesel",
+        filename="economia_pct_r_kwh_vs_diesel_rpm.png",
+        y_label="Delta specific cost vs diesel (%)",
         plot_dir=plot_dir,
     )
     plot_machine_scenario_dual_metric(

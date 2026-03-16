@@ -14,6 +14,7 @@ Pipeline standalone para comparar um motor Diesel `D85B15` vs Etanol `E94H6` a p
   - consumo massico
   - consumo volumetrico
   - custo horario
+  - custo especifico em `R$/kWh`
   - `n_th`
   - economias vs diesel
   - cenarios de colheitadeira, trator de transbordo e caminhao
@@ -85,6 +86,9 @@ Compatibilidade de leitura:
 Inclui tambem:
 
 - `out_FPT/plots/power_kw_vs_rpm.png`
+- `out_FPT/plots/custo_especifico_r_kwh_vs_rpm.png`
+- `out_FPT/plots/economia_r_kwh_vs_diesel_rpm.png`
+- `out_FPT/plots/economia_pct_r_kwh_vs_diesel_rpm.png`
 
 ## Observacoes
 

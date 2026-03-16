@@ -10,6 +10,14 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
 - Persistencia local da ultima selecao de pares em `%LOCALAPPDATA%\pipeline_fpt\last_pair_selection.json`.
 - `Pair_ID` e `Pair_Label` nos dataframes agregados e no comparativo final.
 - Saidas adicionais `compare_<pair_id>.xlsx` quando houver mais de um par selecionado.
+- Metricas novas de custo especifico:
+  - `Custo_R_kWh`
+  - `Economia_vs_Diesel_R_kWh`
+  - `Economia_vs_Diesel_R_kWh_pct`
+- Plots novos:
+  - `custo_especifico_r_kwh_vs_rpm.png`
+  - `economia_r_kwh_vs_diesel_rpm.png`
+  - `economia_pct_r_kwh_vs_diesel_rpm.png`
 
 ### Changed
 

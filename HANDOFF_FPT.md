@@ -27,10 +27,13 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - `Consumo_kg_h`
 - `Consumo_L_h`
 - `Custo_R_h`
+- `Custo_R_kWh`
 - `n_th` e `n_th_pct`
 - baseline diesel por `RPM`
 - `Economia_vs_Diesel_R_h`
 - `Economia_vs_Diesel_pct`
+- `Economia_vs_Diesel_R_kWh`
+- `Economia_vs_Diesel_R_kWh_pct`
 - cenarios de maquinas:
   - colheitadeira
   - trator transbordo
@@ -50,9 +53,12 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - potencia em kW vs RPM
 - consumo volumetrico vs RPM
 - custo horario vs RPM
+- custo especifico `R$/kWh` vs RPM
 - `n_th` vs RPM
 - economia `R$/h` vs RPM
 - economia `%` vs RPM
+- delta de custo especifico `R$/kWh` vs diesel
+- delta percentual de custo especifico vs diesel
 - graficos de cenarios de maquinas por RPM
 
 ## Convencoes
@@ -60,6 +66,7 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - eixo X em `RPM`
 - passo fixo de `250 rpm`
 - custo horario em `R$/h`
+- custo especifico em `R$/kWh`
 - custo anual em `x10^3 R$/ano`
 - consumo anual de etanol em `x10^3 L/ano`
 - economia negativa significa vantagem do etanol vs diesel
