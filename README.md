@@ -81,10 +81,10 @@ Compatibilidade de leitura:
 
 Filtro de pontos para plot:
 
-- depois de salvar o `lv_kpis_fpt.xlsx` bruto, o pipeline pode abrir uma GUI para marcar/desmarcar pontos de `Pair_ID + Fuel_Label + RPM`;
+- depois de salvar o `lv_kpis_fpt.xlsx` bruto, o pipeline pode abrir uma GUI em grade para marcar/desmarcar conjuntos por `Pair_ID/Fuel_Label` nas colunas e `RPM` nas linhas;
 - a ultima selecao fica salva em `%LOCALAPPDATA%\pipeline_fpt\plot_point_filter_last.json`;
 - o filtro vale para os comparativos e plots da rodada, mas nao apaga pontos do `lv_kpis_fpt.xlsx` bruto;
-- isso permite excluir manualmente outliers de plot sem forcar deteccao automatica no codigo.
+- isso permite excluir manualmente outliers de plot no estilo do filtro de cargas da pipeline NANUM, sem forcar deteccao automatica no codigo.
 
 ## Saidas
 

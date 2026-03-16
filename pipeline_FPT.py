@@ -946,6 +946,7 @@ def _build_plot_point_rows(df: pd.DataFrame) -> List[Dict[str, object]]:
         "Consumo_kg_h",
         "Custo_R_h",
         "Custo_R_kWh",
+        "N_points",
         "Source_Files",
     ]
     tmp = df.copy()
@@ -959,6 +960,7 @@ def _build_plot_point_rows(df: pd.DataFrame) -> List[Dict[str, object]]:
     point_df["Consumo_kg_h"] = pd.to_numeric(point_df["Consumo_kg_h"], errors="coerce")
     point_df["Custo_R_h"] = pd.to_numeric(point_df["Custo_R_h"], errors="coerce")
     point_df["Custo_R_kWh"] = pd.to_numeric(point_df["Custo_R_kWh"], errors="coerce")
+    point_df["N_points"] = pd.to_numeric(point_df["N_points"], errors="coerce")
     point_df = point_df.dropna(subset=["Pair_ID", "Fuel_Label", "RPM"])
     point_df = point_df.sort_values(["Pair_Label", "Fuel_Label", "RPM"], kind="stable")
 
@@ -978,10 +980,62 @@ def _build_plot_point_rows(df: pd.DataFrame) -> List[Dict[str, object]]:
                 "consumo_kg_h": _to_float(row.get("Consumo_kg_h", pd.NA), default=float("nan")),
                 "custo_r_h": _to_float(row.get("Custo_R_h", pd.NA), default=float("nan")),
                 "custo_r_kwh": _to_float(row.get("Custo_R_kWh", pd.NA), default=float("nan")),
+                "n_points": int(_to_float(row.get("N_points", 1), default=1.0)) if np.isfinite(_to_float(row.get("N_points", 1), default=1.0)) else 1,
                 "source_files": str(row.get("Source_Files", "")).strip(),
             }
         )
     return rows
+
+
+def _preferred_fpt_fuel_order(labels: List[str]) -> List[str]:
+    preferred = ["D85B15", "E94H6"]
+    uniq = [str(v).strip() for v in labels if str(v).strip()]
+    ordered = [label for label in preferred if label in uniq]
+    extras = sorted([label for label in uniq if label not in ordered], key=_canon_text)
+    return ordered + extras
+
+
+def _build_fpt_plot_point_catalog(
+    df: pd.DataFrame,
+) -> Tuple[List[Tuple[str, str]], List[float], Dict[Tuple[str, str, float], int], Dict[Tuple[str, str], str], List[str]]:
+    rows = _build_plot_point_rows(df)
+    if not rows:
+        return [], [], {}, {}, []
+
+    pair_labels: Dict[str, str] = {}
+    for row in rows:
+        pair_id = str(row["pair_id"]).strip()
+        pair_label = str(row["pair_label"]).strip() or pair_id
+        if pair_id not in pair_labels:
+            pair_labels[pair_id] = pair_label
+
+    ordered_pair_ids = sorted(pair_labels.keys(), key=lambda key: (_canon_text(pair_labels.get(key, "")), _canon_text(key)))
+    pair_aliases = {pair_id: f"P{idx + 1}" for idx, pair_id in enumerate(ordered_pair_ids)}
+
+    series_keys_set = {(str(row["pair_id"]).strip(), str(row["fuel_label"]).strip()) for row in rows}
+    fuel_order = {fuel: idx for idx, fuel in enumerate(_preferred_fpt_fuel_order([fuel for _, fuel in series_keys_set]))}
+    series_keys = sorted(
+        series_keys_set,
+        key=lambda item: (
+            ordered_pair_ids.index(item[0]) if item[0] in ordered_pair_ids else 999,
+            fuel_order.get(item[1], 999),
+            _canon_text(item[1]),
+        ),
+    )
+
+    series_labels = {
+        series_key: f"{pair_aliases.get(series_key[0], series_key[0])}\n{series_key[1]}"
+        for series_key in series_keys
+    }
+    legend_lines = [f"{pair_aliases[pair_id]} = {pair_labels[pair_id]}" for pair_id in ordered_pair_ids]
+
+    rpm_values = sorted({float(row["rpm"]) for row in rows})
+    counts: Dict[Tuple[str, str, float], int] = {}
+    for row in rows:
+        key = row["key"]
+        counts[key] = int(row.get("n_points", 1) or 1)
+
+    return series_keys, rpm_values, counts, series_labels, legend_lines
 
 
 def _resolve_plot_point_initial_selection(
@@ -1011,15 +1065,15 @@ def _resolve_plot_point_initial_selection(
 
 
 def prompt_plot_point_filter(df: pd.DataFrame) -> Optional[Set[Tuple[str, str, float]]]:
-    point_rows = _build_plot_point_rows(df)
-    if not point_rows:
+    series_keys, rpm_values, counts, series_labels, legend_lines = _build_fpt_plot_point_catalog(df)
+    if not series_keys or not rpm_values or not counts:
         print("[WARN] Nao encontrei pontos para abrir o filtro de plot FPT. Vou usar todos.")
         return None
     if tk is None or ttk is None or messagebox is None:
         print("[WARN] Tkinter nao esta disponivel. Vou usar todos os pontos do FPT.")
         return None
 
-    available_points = {row["key"] for row in point_rows}
+    available_points = {key for key, count in counts.items() if count > 0}
     initial_selection, initial_message = _resolve_plot_point_initial_selection(available_points)
     result: Dict[str, object] = {"selected": None}
 
@@ -1030,12 +1084,19 @@ def prompt_plot_point_filter(df: pd.DataFrame) -> Optional[Set[Tuple[str, str, f
 
     ttk.Label(
         root,
-        text="Selecione os pontos que entram nos comparativos e plots do FPT. O lv_kpis_fpt.xlsx bruto continua completo.",
+        text="Selecione os conjuntos de pontos que entram nos comparativos e plots do FPT. O lv_kpis_fpt.xlsx bruto continua completo.",
         wraplength=1180,
         justify="left",
     ).pack(fill="x", padx=12, pady=(12, 4))
     info_var = tk.StringVar(value=initial_message)
     ttk.Label(root, textvariable=info_var, wraplength=1180, justify="left").pack(fill="x", padx=12, pady=(0, 8))
+    if legend_lines:
+        ttk.Label(
+            root,
+            text=" | ".join(legend_lines),
+            wraplength=1180,
+            justify="left",
+        ).pack(fill="x", padx=12, pady=(0, 8))
 
     toolbar = ttk.Frame(root)
     toolbar.pack(fill="x", padx=12, pady=(0, 8))
@@ -1047,10 +1108,12 @@ def prompt_plot_point_filter(df: pd.DataFrame) -> Optional[Set[Tuple[str, str, f
     body.rowconfigure(0, weight=1)
 
     canvas = tk.Canvas(body, highlightthickness=0)
+    hscroll = ttk.Scrollbar(body, orient="horizontal", command=canvas.xview)
     scrollbar = ttk.Scrollbar(body, orient="vertical", command=canvas.yview)
-    canvas.configure(yscrollcommand=scrollbar.set)
+    canvas.configure(yscrollcommand=scrollbar.set, xscrollcommand=hscroll.set)
     canvas.grid(row=0, column=0, sticky="nsew")
     scrollbar.grid(row=0, column=1, sticky="ns")
+    hscroll.grid(row=1, column=0, sticky="ew")
 
     inner = ttk.Frame(canvas)
     canvas_window = canvas.create_window((0, 0), window=inner, anchor="nw")
@@ -1062,37 +1125,55 @@ def prompt_plot_point_filter(df: pd.DataFrame) -> Optional[Set[Tuple[str, str, f
     inner.bind("<Configure>", sync_canvas)
     canvas.bind("<Configure>", sync_canvas)
 
+    header_bg = "#f4f6f8"
+    cell_border = "#d7dce1"
+
+    def make_cell(row: int, column: int, *, bg: str = "white") -> tk.Frame:
+        cell = tk.Frame(
+            inner,
+            bg=bg,
+            highlightbackground=cell_border,
+            highlightthickness=1,
+            bd=0,
+            padx=3,
+            pady=0,
+        )
+        cell.grid(row=row, column=column, sticky="nsew")
+        return cell
+
+    header_cell = make_cell(0, 0, bg=header_bg)
+    ttk.Label(header_cell, text="RPM", anchor="center", justify="center").pack(fill="both", expand=True)
+
+    for col_idx, series_key in enumerate(series_keys, start=1):
+        header_cell = make_cell(0, col_idx, bg=header_bg)
+        ttk.Label(
+            header_cell,
+            text=series_labels.get(series_key, "\n".join(series_key)),
+            anchor="center",
+            justify="center",
+        ).pack(fill="both", expand=True)
+        inner.columnconfigure(col_idx, weight=1)
+
     cell_vars: Dict[Tuple[str, str, float], tk.BooleanVar] = {}
 
-    def format_point_text(row: Dict[str, object]) -> str:
-        power_kw = row.get("power_kw", float("nan"))
-        consumo_kg_h = row.get("consumo_kg_h", float("nan"))
-        custo_r_h = row.get("custo_r_h", float("nan"))
-        custo_r_kwh = row.get("custo_r_kwh", float("nan"))
-        source_files = str(row.get("source_files", "")).strip()
-        return (
-            f"PAR: {row['pair_label']}\n"
-            f"COMBUSTIVEL: {row['fuel_label']} | RPM: {row['rpm']:.0f}\n"
-            f"Power_kW={power_kw:.6g} | Consumo_kg_h={consumo_kg_h:.6g} | "
-            f"Custo_R_h={custo_r_h:.6g} | Custo_R_kWh={custo_r_kwh:.6g}\n"
-            f"Arquivos: {source_files}"
-        )
+    for row_idx, rpm_value in enumerate(rpm_values, start=1):
+        rpm_cell = make_cell(row_idx, 0, bg=header_bg)
+        ttk.Label(rpm_cell, text=f"{rpm_value:.0f}", anchor="center", justify="center").pack(fill="both", expand=True)
+        for col_idx, series_key in enumerate(series_keys, start=1):
+            key = (series_key[0], series_key[1], float(rpm_value))
+            count = counts.get(key, 0)
+            if count <= 0:
+                empty_cell = make_cell(row_idx, col_idx)
+                ttk.Label(empty_cell, text="-", anchor="center").pack(fill="both", expand=True)
+                continue
 
-    for idx, row in enumerate(point_rows):
-        key = row["key"]
-        var = tk.BooleanVar(value=bool(initial_selection.get(key, True)))
-        cell_vars[key] = var
-        chk = tk.Checkbutton(
-            inner,
-            text=format_point_text(row),
-            variable=var,
-            anchor="w",
-            justify="left",
-            wraplength=1120,
-            padx=6,
-            pady=6,
-        )
-        chk.grid(row=idx, column=0, sticky="ew")
+            var = tk.BooleanVar(value=bool(initial_selection.get(key, True)))
+            cell_vars[key] = var
+            point_cell = make_cell(row_idx, col_idx)
+            inner_frame = ttk.Frame(point_cell)
+            inner_frame.pack(fill="both", expand=True)
+            ttk.Checkbutton(inner_frame, variable=var).pack(anchor="center", pady=0)
+            ttk.Label(inner_frame, text="" if count == 1 else f"{count}x", anchor="center", justify="center").pack(anchor="center")
 
     def selected_points_now() -> Set[Tuple[str, str, float]]:
         return {key for key, var in cell_vars.items() if bool(var.get())}
@@ -1135,6 +1216,7 @@ def prompt_plot_point_filter(df: pd.DataFrame) -> Optional[Set[Tuple[str, str, f
     ttk.Button(toolbar, text="Limpar tudo", command=lambda: set_all(False)).pack(side="left", padx=(8, 0))
     ttk.Button(toolbar, text="Carregar ultima", command=load_last_selection).pack(side="left", padx=(8, 0))
     ttk.Button(toolbar, text="Salvar atual", command=save_current_selection).pack(side="left", padx=(8, 0))
+    ttk.Label(toolbar, text="Colunas = par/combustivel | Linhas = RPM").pack(side="left", padx=(12, 0))
     ttk.Label(toolbar, textvariable=status_var).pack(side="right")
     refresh_status()
 

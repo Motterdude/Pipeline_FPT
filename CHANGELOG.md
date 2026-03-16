@@ -8,7 +8,7 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
 
 - GUI em `Tkinter` no `pipeline_FPT.py` para ler `raw_FPT/` e montar explicitamente os pares Diesel vs Etanol da rodada.
 - Persistencia local da ultima selecao de pares em `%LOCALAPPDATA%\pipeline_fpt\last_pair_selection.json`.
-- GUI em `Tkinter` para filtro manual de pontos de plot, com memoria da ultima selecao em `%LOCALAPPDATA%\pipeline_fpt\plot_point_filter_last.json`.
+- GUI em `Tkinter` para filtro manual de pontos de plot em grade, com memoria da ultima selecao em `%LOCALAPPDATA%\pipeline_fpt\plot_point_filter_last.json`.
 - `Pair_ID` e `Pair_Label` nos dataframes agregados e no comparativo final.
 - Saidas adicionais `compare_<pair_id>.xlsx` quando houver mais de um par selecionado.
 - Metricas novas de custo especifico:
