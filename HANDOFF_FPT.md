@@ -109,7 +109,9 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - a vazao de ar entra automaticamente quando a planilha trouxer `Sensyflow` ou `qm Air`;
 - a pressao de coletor entra automaticamente quando a planilha trouxer `P_i_MF` ou `p i MF`, e o pipeline normaliza a unidade final para `mBar`;
 - `T_i_MF` e `T_B_IC` entram automaticamente tanto no layout antigo quanto no SWay;
-- a eficiencia volumetrica usa `1013 mBar` de referencia, `T_i_MF`, cilindrada total `12,9 L` e `6` cilindros;
+- a eficiencia volumetrica usa `1013 mBar` de referencia, `T_i_MF`, `6` cilindros e cilindrada detectada pelo nome do arquivo:
+  - `NEF67` e `NEF6` -> `6,7 L`
+  - `C13`, `Cursore 13` e `Cursor 13` -> `12,9 L`
 - a potencia dissipada no intercooler usa `Air_kg_h`, `T_B_IC`, `T_i_MF` e `cp_ar = 1,005 kJ/kg.K`;
 - manter `raw_FPT/` fora do Git
 - versionar `out_FPT/` quando os resultados precisarem acompanhar o codigo

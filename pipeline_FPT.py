@@ -31,7 +31,6 @@ PAIR_SELECTION_PATH = LOCAL_STATE_DIR / "last_pair_selection.json"
 PLOT_POINT_FILTER_PATH = LOCAL_STATE_DIR / "plot_point_filter_last.json"
 AIR_GAS_CONSTANT_J_KG_K = 287.058
 ETA_V_REF_PRESSURE_MBAR = 1013.0
-ENGINE_DISPLACEMENT_L = 12.9
 ENGINE_CYLINDERS = 6
 AIR_CP_KJ_KG_K = 1.005
 
@@ -114,6 +113,17 @@ def make_pair_id(diesel_path: Path, ethanol_path: Path) -> str:
 
 def make_pair_label(diesel_path: Path, ethanol_path: Path) -> str:
     return f"{diesel_path.stem} vs {ethanol_path.stem}"
+
+
+def infer_engine_displacement_l(source_name: object) -> float:
+    text = str(source_name or "").upper()
+    normalized = re.sub(r"[^A-Z0-9]+", "", text)
+
+    if ("CURSORE13" in normalized) or ("CURSOR13" in normalized) or ("C13" in normalized):
+        return 12.9
+    if ("NEF67" in normalized) or ("NEF6" in normalized):
+        return 6.7
+    return 12.9
 
 
 def _to_float(value: object, default: float = float("nan")) -> float:
@@ -721,6 +731,7 @@ def read_fpt_xlsx(
             "Pair_ID": pair_id,
             "Pair_Label": pair_label,
             "Source_File": path.name,
+            "Engine_Displacement_L": infer_engine_displacement_l(path.name),
             "Fuel_Label": fuel_label,
             "Consumo_kg_h": pd.to_numeric(df[fb_col], errors="coerce"),
             "Power_kW": pd.to_numeric(df[p_col], errors="coerce"),
@@ -745,6 +756,7 @@ def aggregate_curve_rows(df: pd.DataFrame) -> pd.DataFrame:
         df.groupby(["Pair_ID", "Pair_Label", "Fuel_Label", "RPM"], dropna=False, sort=True)
         .agg(
             Speed_RPM=("Speed_RPM_raw", "mean"),
+            Engine_Displacement_L=("Engine_Displacement_L", "max"),
             Power_kW=("Power_kW", "mean"),
             Consumo_kg_h=("Consumo_kg_h", "mean"),
             Air_kg_h=("Air_kg_h", "mean"),
@@ -796,6 +808,7 @@ def compute_base_metrics(df: pd.DataFrame) -> pd.DataFrame:
     speed_rpm = pd.to_numeric(out.get("Speed_RPM", out.get("RPM", pd.NA)), errors="coerce")
     intake_temp_c = pd.to_numeric(out.get("T_i_MF_C", pd.NA), errors="coerce")
     pre_ic_temp_c = pd.to_numeric(out.get("T_B_IC_C", pd.NA), errors="coerce")
+    engine_disp_l = pd.to_numeric(out.get("Engine_Displacement_L", pd.NA), errors="coerce")
 
     out["Consumo_L_h"] = (consumo_kg_h * 1000.0 / fuel_density).where(fuel_density.gt(0), pd.NA)
     out["Custo_R_h"] = (pd.to_numeric(out["Consumo_L_h"], errors="coerce") * fuel_cost).where(fuel_cost.gt(0), pd.NA)
@@ -805,8 +818,8 @@ def compute_base_metrics(df: pd.DataFrame) -> pd.DataFrame:
     intake_temp_k = intake_temp_c + 273.15
     rho_ref = ((ETA_V_REF_PRESSURE_MBAR * 100.0) / (AIR_GAS_CONSTANT_J_KG_K * intake_temp_k)).where(intake_temp_k.gt(0), pd.NA)
     air_mdot = air_kg_h / 3600.0
-    engine_disp_total_m3 = ENGINE_DISPLACEMENT_L / 1000.0
-    engine_disp_per_cyl_m3 = engine_disp_total_m3 / ENGINE_CYLINDERS if ENGINE_CYLINDERS > 0 else float("nan")
+    engine_disp_total_m3 = engine_disp_l / 1000.0
+    engine_disp_per_cyl_m3 = (engine_disp_total_m3 / ENGINE_CYLINDERS).where(engine_disp_total_m3.gt(0), pd.NA) if ENGINE_CYLINDERS > 0 else pd.Series(pd.NA, index=out.index)
     theoretical_volume_flow_m3_s = (engine_disp_per_cyl_m3 * ENGINE_CYLINDERS * speed_rpm / 2.0 / 60.0).where(speed_rpm.gt(0), pd.NA)
     out["Eta_v"] = (air_mdot / (rho_ref * theoretical_volume_flow_m3_s)).where(
         (air_mdot > 0) & rho_ref.gt(0) & theoretical_volume_flow_m3_s.gt(0),

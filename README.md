@@ -89,10 +89,13 @@ Compatibilidade de leitura:
 
 Premissas termofluidicas:
 
+- cilindrada do motor detectada pelo nome do arquivo:
+  - `NEF67` ou `NEF6` -> `6,7 L`
+  - `C13`, `Cursore 13` ou `Cursor 13` -> `12,9 L`
 - eficiencia volumetrica:
   - referencia de pressao fixa em `1013 mBar`
   - temperatura de referencia do coletor `T_i_MF`
-  - cilindrada total do motor `12,9 L`
+  - cilindrada total detectada automaticamente pelo nome do arquivo
   - `6` cilindros
 - potencia dissipada no intercooler:
   - usa `Air_kg_h`
