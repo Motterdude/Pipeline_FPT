@@ -28,6 +28,7 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - `Consumo_L_h`
 - `Air_kg_h`
 - `Air_kg_h_kW`
+- `P_i_MF_mbar`
 - `Custo_R_h`
 - `Custo_R_kWh`
 - `n_th` e `n_th_pct`
@@ -62,6 +63,7 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - custo especifico `R$/kWh` vs RPM
 - vazao de ar `kg/h` vs RPM
 - vazao de ar especifica `kg/h/kW` vs RPM
+- pressao de coletor `mBar` vs RPM
 - `n_th` vs RPM
 - economia `R$/h` vs RPM
 - economia `%` vs RPM
@@ -95,6 +97,7 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - ajustar `FILE_INCLUDE_REGEX` no config continua sendo util para reduzir a lista de arquivos mostrada na GUI;
 - o leitor agora reconhece o layout alternativo do arquivo `SWay_P8...D85B15.xlsx`, que nao usa a aba `D` e nao traz os mesmos nomes de coluna do conjunto FPT anterior;
 - a vazao de ar entra automaticamente quando a planilha trouxer `Sensyflow` ou `qm Air`;
+- a pressao de coletor entra automaticamente quando a planilha trouxer `P_i_MF` ou `p i MF`, e o pipeline normaliza a unidade final para `mBar`;
 - manter `raw_FPT/` fora do Git
 - versionar `out_FPT/` quando os resultados precisarem acompanhar o codigo
 - `xlsx` e `png` sao marcados como binarios em `.gitattributes`

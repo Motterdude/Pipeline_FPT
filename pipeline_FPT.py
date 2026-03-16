@@ -50,6 +50,7 @@ FPT_COLUMN_ALIASES = {
     "power": ["P_dyno", "P dyno", "P dyno Corr", "P_dyno_Corr", "Power"],
     "speed": ["SPEED", "n engine", "n_engine", "Engine Speed", "Epm_nEng"],
     "air_mass": ["Sensyflow", "qm Air", "qmair", "qm_air", "Air mass", "Air_Mass"],
+    "intake_pressure": ["P_i_MF", "p i MF", "p_i_mf"],
 }
 
 MACHINE_SCENARIO_SPECS = [
@@ -121,6 +122,20 @@ def _to_float(value: object, default: float = float("nan")) -> float:
         return float(text)
     except Exception:
         return default
+
+
+def _pressure_series_to_mbar(series: pd.Series) -> pd.Series:
+    values = pd.to_numeric(series, errors="coerce")
+    finite = values[np.isfinite(values)]
+    if finite.empty:
+        return values
+
+    median = float(finite.median())
+    if median <= 20.0:
+        return values * 1000.0
+    if median <= 400.0:
+        return values * 10.0
+    return values
 
 
 def load_last_pair_selection() -> List[Tuple[str, str]]:
@@ -272,7 +287,7 @@ def load_fpt_measure_dataframe(
     fuel_mass_col: str,
     power_col: str,
     speed_col: str,
-) -> Tuple[pd.DataFrame, str, str, str, Optional[str]]:
+) -> Tuple[pd.DataFrame, str, str, str, Optional[str], Optional[str]]:
     workbook = pd.ExcelFile(path)
     sheet_candidates: List[str] = []
     requested_sheet = str(sheet_name or "").strip()
@@ -299,12 +314,17 @@ def load_fpt_measure_dataframe(
                     air_col = resolve_col_with_aliases(df, "air_mass", FPT_COLUMN_ALIASES["air_mass"])
                 except KeyError:
                     air_col = None
+                intake_pressure_col = None
+                try:
+                    intake_pressure_col = resolve_col_with_aliases(df, "intake_pressure", FPT_COLUMN_ALIASES["intake_pressure"])
+                except KeyError:
+                    intake_pressure_col = None
                 if candidate_sheet != requested_sheet or header_row != 0:
                     print(
                         f"[INFO] {path.name}: usei sheet='{candidate_sheet}' header={header_row} "
                         f"para compatibilizar o layout do arquivo."
                     )
-                return df, fb_col, p_col, rpm_col, air_col
+                return df, fb_col, p_col, rpm_col, air_col, intake_pressure_col
             except KeyError as exc:
                 errors.append(f"{candidate_sheet}/header={header_row}: {exc}")
                 continue
@@ -668,7 +688,7 @@ def read_fpt_xlsx(
         print(f"[INFO] Pulei {path.name}: combustivel nao reconhecido no nome.")
         return pd.DataFrame()
 
-    df, fb_col, p_col, rpm_col, air_col = load_fpt_measure_dataframe(
+    df, fb_col, p_col, rpm_col, air_col, intake_pressure_col = load_fpt_measure_dataframe(
         path,
         sheet_name=sheet_name,
         fuel_mass_col=fuel_mass_col,
@@ -676,6 +696,7 @@ def read_fpt_xlsx(
         speed_col=speed_col,
     )
 
+    pressure_series = _pressure_series_to_mbar(df[intake_pressure_col]) if intake_pressure_col else pd.Series(pd.NA, index=df.index)
     out = pd.DataFrame(
         {
             "Pair_ID": pair_id,
@@ -686,6 +707,7 @@ def read_fpt_xlsx(
             "Power_kW": pd.to_numeric(df[p_col], errors="coerce"),
             "Speed_RPM_raw": pd.to_numeric(df[rpm_col], errors="coerce"),
             "Air_kg_h": pd.to_numeric(df[air_col], errors="coerce") if air_col else pd.NA,
+            "P_i_MF_mbar": pressure_series,
         }
     )
     out = out.dropna(subset=["Consumo_kg_h", "Power_kW", "Speed_RPM_raw"]).copy()
@@ -705,9 +727,11 @@ def aggregate_curve_rows(df: pd.DataFrame) -> pd.DataFrame:
             Power_kW=("Power_kW", "mean"),
             Consumo_kg_h=("Consumo_kg_h", "mean"),
             Air_kg_h=("Air_kg_h", "mean"),
+            P_i_MF_mbar=("P_i_MF_mbar", "mean"),
             Power_kW_sd=("Power_kW", "std"),
             Consumo_kg_h_sd=("Consumo_kg_h", "std"),
             Air_kg_h_sd=("Air_kg_h", "std"),
+            P_i_MF_mbar_sd=("P_i_MF_mbar", "std"),
             N_points=("Power_kW", "count"),
             Source_Files=("Source_File", lambda s: "; ".join(sorted(set(str(v) for v in s if str(v).strip())))),
         )
@@ -921,6 +945,7 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
             "Custo_R_kWh": "Diesel_Custo_R_kWh",
             "Air_kg_h": "Diesel_Air_kg_h",
             "Air_kg_h_kW": "Diesel_Air_kg_h_kW",
+            "P_i_MF_mbar": "Diesel_P_i_MF_mbar",
             "n_th_pct": "Diesel_n_th_pct",
         }
     )
@@ -934,6 +959,7 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
             "Custo_R_kWh": "E94H6_Custo_R_kWh",
             "Air_kg_h": "E94H6_Air_kg_h",
             "Air_kg_h_kW": "E94H6_Air_kg_h_kW",
+            "P_i_MF_mbar": "E94H6_P_i_MF_mbar",
             "n_th_pct": "E94H6_n_th_pct",
         }
     )
@@ -950,6 +976,7 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
         "Diesel_Custo_R_kWh",
         "Diesel_Air_kg_h",
         "Diesel_Air_kg_h_kW",
+        "Diesel_P_i_MF_mbar",
         "Diesel_n_th_pct",
     ]
     cols_right = [
@@ -963,6 +990,7 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
         "E94H6_Custo_R_kWh",
         "E94H6_Air_kg_h",
         "E94H6_Air_kg_h_kW",
+        "E94H6_P_i_MF_mbar",
         "E94H6_n_th_pct",
         "Economia_vs_Diesel_R_h",
         "Economia_vs_Diesel_pct",
@@ -1565,6 +1593,14 @@ def make_plots(df: pd.DataFrame, plot_dir: Path) -> None:
         title="Air mass flow per power vs RPM",
         filename="vazao_ar_kg_h_kw_vs_rpm.png",
         y_label="Air mass flow per power (kg/h/kW)",
+        plot_dir=plot_dir,
+    )
+    plot_dual_fuel_metric(
+        df,
+        y_col="P_i_MF_mbar",
+        title="Intake manifold pressure vs RPM",
+        filename="pressao_coletor_mbar_vs_rpm.png",
+        y_label="Intake manifold pressure (mBar)",
         plot_dir=plot_dir,
     )
     plot_dual_fuel_metric(
