@@ -67,7 +67,13 @@ Observacoes da selecao de pares:
 - cada comparativo passa a ser feito por `Pair_ID`, sem misturar motores diferentes no mesmo baseline;
 - a ultima selecao fica salva localmente em `%LOCALAPPDATA%\pipeline_fpt\last_pair_selection.json`;
 - os nomes dos arquivos aparecem com quebra de linha nos seletores Diesel/Etanol, sem depender de slider horizontal;
+- a coluna de pares selecionados tambem mostra Diesel/Etanol com quebra de linha;
 - se mais de um par for escolhido, os plots saem em subpastas dentro de `out_FPT/plots/`.
+
+Compatibilidade de leitura:
+
+- o leitor agora aceita tanto o layout FPT antigo com aba `D` quanto o layout alternativo do arquivo `SWay_P8...`, que vem com `Planilha1`, uma linha numerica antes do cabecalho real e nomes como `qm Fuel`, `P dyno` e `n engine`;
+- quando o layout alternativo e detectado, o pipeline ajusta `sheet/header` automaticamente e informa isso no log.
 
 ## Saidas
 

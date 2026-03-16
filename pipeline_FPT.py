@@ -44,6 +44,12 @@ FUEL_SPECS = {
     },
 }
 
+FPT_COLUMN_ALIASES = {
+    "fuel_mass": ["FB_VAL", "qm Fuel", "qm_fuel", "Fuel mass", "Fuel_Mass"],
+    "power": ["P_dyno", "P dyno", "P dyno Corr", "P_dyno_Corr", "Power"],
+    "speed": ["SPEED", "n engine", "n_engine", "Engine Speed", "Epm_nEng"],
+}
+
 MACHINE_SCENARIO_SPECS = [
     {
         "key": "Colheitadeira",
@@ -178,6 +184,66 @@ def resolve_col(df: pd.DataFrame, requested: str) -> str:
     raise KeyError(f"Coluna '{requested}' nao encontrada.")
 
 
+def resolve_col_with_aliases(df: pd.DataFrame, requested: str, aliases: List[str]) -> str:
+    candidates = [str(requested or "").strip()] + [str(alias or "").strip() for alias in aliases]
+    tried: List[str] = []
+    for candidate in candidates:
+        if not candidate or candidate in tried:
+            continue
+        tried.append(candidate)
+        try:
+            return resolve_col(df, candidate)
+        except KeyError:
+            continue
+    raise KeyError(f"Nenhuma coluna encontrada para '{requested}' com aliases {aliases}.")
+
+
+def load_fpt_measure_dataframe(
+    path: Path,
+    *,
+    sheet_name: str,
+    fuel_mass_col: str,
+    power_col: str,
+    speed_col: str,
+) -> Tuple[pd.DataFrame, str, str, str]:
+    workbook = pd.ExcelFile(path)
+    sheet_candidates: List[str] = []
+    requested_sheet = str(sheet_name or "").strip()
+    if requested_sheet and requested_sheet in workbook.sheet_names:
+        sheet_candidates.append(requested_sheet)
+    for candidate in workbook.sheet_names:
+        if candidate not in sheet_candidates:
+            sheet_candidates.append(candidate)
+
+    errors: List[str] = []
+    for candidate_sheet in sheet_candidates:
+        for header_row in [0, 1, 2]:
+            try:
+                df = pd.read_excel(path, sheet_name=candidate_sheet, header=header_row, dtype=object)
+            except Exception as exc:
+                errors.append(f"{candidate_sheet}/header={header_row}: {exc}")
+                continue
+            try:
+                fb_col = resolve_col_with_aliases(df, fuel_mass_col, FPT_COLUMN_ALIASES["fuel_mass"])
+                p_col = resolve_col_with_aliases(df, power_col, FPT_COLUMN_ALIASES["power"])
+                rpm_col = resolve_col_with_aliases(df, speed_col, FPT_COLUMN_ALIASES["speed"])
+                if candidate_sheet != requested_sheet or header_row != 0:
+                    print(
+                        f"[INFO] {path.name}: usei sheet='{candidate_sheet}' header={header_row} "
+                        f"para compatibilizar o layout do arquivo."
+                    )
+                return df, fb_col, p_col, rpm_col
+            except KeyError as exc:
+                errors.append(f"{candidate_sheet}/header={header_row}: {exc}")
+                continue
+
+    joined = "; ".join(errors[:6])
+    raise ValueError(
+        f"Nao consegui interpretar {path.name}. Sheets disponiveis: {workbook.sheet_names}. "
+        f"Tentativas: {joined}"
+    )
+
+
 def load_defaults_config(path: Path) -> Dict[str, str]:
     df = pd.read_excel(path, sheet_name="Defaults")
     out: Dict[str, str] = {}
@@ -297,6 +363,73 @@ def _build_wrapped_radio_panel(
     return container, value_var
 
 
+def _build_wrapped_selected_pairs_panel(
+    parent,
+    *,
+    title: str,
+    rel_name,
+    width_wrap: int = 520,
+):
+    container = ttk.Frame(parent)
+    container.columnconfigure(0, weight=1)
+    container.rowconfigure(1, weight=1)
+    ttk.Label(container, text=title).grid(row=0, column=0, sticky="w")
+
+    viewport = ttk.Frame(container)
+    viewport.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
+    viewport.columnconfigure(0, weight=1)
+    viewport.rowconfigure(0, weight=1)
+
+    canvas = tk.Canvas(viewport, highlightthickness=0)
+    scrollbar = ttk.Scrollbar(viewport, orient="vertical", command=canvas.yview)
+    inner = ttk.Frame(canvas)
+
+    canvas.configure(yscrollcommand=scrollbar.set)
+    canvas.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
+
+    inner_window = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+    def on_inner_configure(_event=None) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def on_canvas_configure(event) -> None:
+        canvas.itemconfigure(inner_window, width=event.width)
+
+    inner.bind("<Configure>", on_inner_configure)
+    canvas.bind("<Configure>", on_canvas_configure)
+
+    value_var = tk.StringVar(value="")
+    pair_lookup: Dict[str, Tuple[Path, Path]] = {}
+
+    def refresh(selected_pairs: List[Tuple[Path, Path]]) -> None:
+        pair_lookup.clear()
+        for child in inner.winfo_children():
+            child.destroy()
+        for idx, (diesel_path, ethanol_path) in enumerate(selected_pairs):
+            key = str(idx)
+            pair_lookup[key] = (diesel_path, ethanol_path)
+            label = (
+                f"DIESEL:\n{rel_name(diesel_path)}\n\n"
+                f"ETANOL:\n{rel_name(ethanol_path)}"
+            )
+            tk.Radiobutton(
+                inner,
+                text=label,
+                variable=value_var,
+                value=key,
+                anchor="w",
+                justify="left",
+                wraplength=width_wrap,
+                padx=6,
+                pady=6,
+            ).grid(row=idx, column=0, sticky="ew")
+        if value_var.get() not in pair_lookup:
+            value_var.set("")
+
+    return container, value_var, pair_lookup, refresh
+
+
 def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePair]:
     if tk is None or ttk is None or messagebox is None:
         raise RuntimeError("Tkinter nao esta disponivel neste Python.")
@@ -346,26 +479,21 @@ def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePai
     body.columnconfigure(2, weight=2)
     body.rowconfigure(0, weight=1)
 
-    pair_list = ttk.Treeview(body, columns=("diesel", "ethanol"), show="headings", selectmode="browse")
-    pair_list.heading("diesel", text="Diesel")
-    pair_list.heading("ethanol", text="Etanol")
-    pair_list.column("diesel", width=300, anchor="w")
-    pair_list.column("ethanol", width=360, anchor="w")
-
     diesel_panel, diesel_value = _build_wrapped_radio_panel(body, title="Diesel", paths=diesel_files, rel_name=rel_name)
     ethanol_panel, ethanol_value = _build_wrapped_radio_panel(body, title="Etanol", paths=ethanol_files, rel_name=rel_name)
+    selected_panel, selected_value, selected_lookup, refresh_selected_panel = _build_wrapped_selected_pairs_panel(
+        body,
+        title="Pares selecionados",
+        rel_name=rel_name,
+    )
     diesel_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
     ethanol_panel.grid(row=0, column=1, sticky="nsew", padx=(6, 6))
-    pair_list.grid(row=0, column=2, sticky="nsew", padx=(6, 0))
+    selected_panel.grid(row=0, column=2, sticky="nsew", padx=(6, 0))
 
-    path_lookup = {rel_name(path): path for path in files}
     abs_lookup = {str(path.resolve()): path for path in files}
 
     def refresh_pairs() -> None:
-        for item_id in pair_list.get_children():
-            pair_list.delete(item_id)
-        for idx, (diesel_path, ethanol_path) in enumerate(selected_pairs, start=1):
-            pair_list.insert("", "end", iid=f"pair_{idx}", values=(rel_name(diesel_path), rel_name(ethanol_path)))
+        refresh_selected_panel(selected_pairs)
 
     def add_pair() -> None:
         diesel_path = abs_lookup.get(diesel_value.get())
@@ -381,15 +509,10 @@ def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePai
         refresh_pairs()
 
     def remove_pair() -> None:
-        selected = pair_list.selection()
-        if not selected:
+        selected = selected_lookup.get(selected_value.get())
+        if selected is None:
             return
-        item = pair_list.item(selected[0])
-        diesel_raw, ethanol_raw = item.get("values", ["", ""])
-        diesel_path = path_lookup.get(str(diesel_raw))
-        ethanol_path = path_lookup.get(str(ethanol_raw))
-        if diesel_path is None or ethanol_path is None:
-            return
+        diesel_path, ethanol_path = selected
         selected_pairs[:] = [pair for pair in selected_pairs if pair != (diesel_path, ethanol_path)]
         refresh_pairs()
 
@@ -473,10 +596,13 @@ def read_fpt_xlsx(
         print(f"[INFO] Pulei {path.name}: combustivel nao reconhecido no nome.")
         return pd.DataFrame()
 
-    df = pd.read_excel(path, sheet_name=sheet_name, dtype=object)
-    fb_col = resolve_col(df, fuel_mass_col)
-    p_col = resolve_col(df, power_col)
-    rpm_col = resolve_col(df, speed_col)
+    df, fb_col, p_col, rpm_col = load_fpt_measure_dataframe(
+        path,
+        sheet_name=sheet_name,
+        fuel_mass_col=fuel_mass_col,
+        power_col=power_col,
+        speed_col=speed_col,
+    )
 
     out = pd.DataFrame(
         {

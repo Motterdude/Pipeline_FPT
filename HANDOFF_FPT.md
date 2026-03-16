@@ -69,10 +69,12 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - o pipeline agora abre uma GUI para selecionar quais pares Diesel/E94H6 devem entrar na rodada;
 - essa GUI faz scan completo de `raw_FPT/` sempre que abre e nao fica limitada por `FILE_INCLUDE_REGEX`;
 - os nomes longos dos arquivos agora aparecem com quebra de linha no seletor, sem depender de scroll horizontal;
+- a lista de pares selecionados tambem saiu do layout tabular horizontal e passou a usar bloco com quebra de linha;
 - se quiser bypass da GUI, usar `PAIR_SELECTION_MODE=auto` na aba `Defaults`;
 - a ultima selecao de pares fica salva localmente em `%LOCALAPPDATA%\pipeline_fpt\last_pair_selection.json`;
 - o baseline diesel e o merge de comparacao agora acontecem por `Pair_ID`, nao mais por combustivel puro no conjunto inteiro;
 - ajustar `FILE_INCLUDE_REGEX` no config continua sendo util para reduzir a lista de arquivos mostrada na GUI;
+- o leitor agora reconhece o layout alternativo do arquivo `SWay_P8...D85B15.xlsx`, que nao usa a aba `D` e nao traz os mesmos nomes de coluna do conjunto FPT anterior;
 - manter `raw_FPT/` fora do Git
 - versionar `out_FPT/` quando os resultados precisarem acompanhar o codigo
 - `xlsx` e `png` sao marcados como binarios em `.gitattributes`

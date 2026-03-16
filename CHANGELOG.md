@@ -18,6 +18,8 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
 - O modo padrao do pipeline passa a ser selecao por GUI; `PAIR_SELECTION_MODE=auto` fica disponivel como fallback operacional.
 - A GUI de pares passou a ignorar `FILE_INCLUDE_REGEX` e sempre listar tudo que estiver disponivel em `raw_FPT/`.
 - Os seletores Diesel/Etanol passaram a mostrar nomes longos com quebra de linha, sem slider horizontal.
+- A lista de pares selecionados passou a mostrar Diesel/Etanol com quebra de linha, sem tabela horizontal.
+- O leitor passou a detectar automaticamente o layout alternativo do arquivo `SWay_P8...D85B15.xlsx`, com `Planilha1`, cabecalho na segunda linha e aliases de coluna (`qm Fuel`, `P dyno`, `n engine`).
 
 ## 2026-03-12
 
