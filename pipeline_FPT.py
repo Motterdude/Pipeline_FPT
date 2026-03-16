@@ -5,7 +5,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,6 +28,7 @@ DEFAULT_CONFIG_PATH = ROOT_DIR / "config_pipeline_fpt.xlsx"
 RPM_TICK_STEP = 250.0
 LOCAL_STATE_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "pipeline_fpt"
 PAIR_SELECTION_PATH = LOCAL_STATE_DIR / "last_pair_selection.json"
+PLOT_POINT_FILTER_PATH = LOCAL_STATE_DIR / "plot_point_filter_last.json"
 
 FUEL_SPECS = {
     "D85B15": {
@@ -84,6 +85,10 @@ class FptComparePair:
 
 
 def norm_key(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _canon_text(value: object) -> str:
     return str(value or "").strip().lower()
 
 
@@ -148,6 +153,67 @@ def save_last_pair_selection(pairs: List[FptComparePair]) -> None:
         ]
     }
     PAIR_SELECTION_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
+
+
+def _normalize_plot_point_key(pair_id: object, fuel_label: object, rpm_value: object) -> Optional[Tuple[str, str, float]]:
+    pair = str(pair_id or "").strip()
+    fuel = str(fuel_label or "").strip()
+    rpm = _to_float(rpm_value, default=float("nan"))
+    if not pair or not fuel or not np.isfinite(rpm):
+        return None
+    return pair, fuel, round(float(rpm), 6)
+
+
+def _plot_point_keys_to_jsonable(points: Set[Tuple[str, str, float]]) -> List[Dict[str, object]]:
+    out: List[Dict[str, object]] = []
+    for pair_id, fuel_label, rpm_value in sorted(points, key=lambda item: (_canon_text(item[0]), _canon_text(item[1]), item[2])):
+        out.append({"pair_id": pair_id, "fuel_label": fuel_label, "rpm": round(float(rpm_value), 6)})
+    return out
+
+
+def load_last_plot_point_selection_state() -> Optional[Dict[str, object]]:
+    try:
+        if not PLOT_POINT_FILTER_PATH.exists():
+            return None
+        payload = json.loads(PLOT_POINT_FILTER_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+    selected_points: Set[Tuple[str, str, float]] = set()
+    for row in payload.get("selected_points", []) or []:
+        if not isinstance(row, dict):
+            continue
+        key = _normalize_plot_point_key(row.get("pair_id", ""), row.get("fuel_label", ""), row.get("rpm", None))
+        if key is not None:
+            selected_points.add(key)
+
+    available_points: Set[Tuple[str, str, float]] = set()
+    for row in payload.get("available_points", []) or []:
+        if not isinstance(row, dict):
+            continue
+        key = _normalize_plot_point_key(row.get("pair_id", ""), row.get("fuel_label", ""), row.get("rpm", None))
+        if key is not None:
+            available_points.add(key)
+
+    return {
+        "selected_points": selected_points,
+        "available_points": available_points,
+    }
+
+
+def save_last_plot_point_selection_state(
+    selected_points: Set[Tuple[str, str, float]],
+    available_points: Set[Tuple[str, str, float]],
+) -> None:
+    try:
+        LOCAL_STATE_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "selected_points": _plot_point_keys_to_jsonable(selected_points),
+            "available_points": _plot_point_keys_to_jsonable(available_points),
+        }
+        PLOT_POINT_FILTER_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
+    except Exception as exc:
+        print(f"[WARN] Nao consegui salvar a ultima selecao de pontos do plot FPT: {exc}")
 
 
 def safe_to_excel(df: pd.DataFrame, path: Path) -> Path:
@@ -867,6 +933,247 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
     return merged.sort_values(["Pair_ID", "RPM"]).copy()
 
 
+def _build_plot_point_rows(df: pd.DataFrame) -> List[Dict[str, object]]:
+    if df is None or df.empty:
+        return []
+
+    cols = [
+        "Pair_ID",
+        "Pair_Label",
+        "Fuel_Label",
+        "RPM",
+        "Power_kW",
+        "Consumo_kg_h",
+        "Custo_R_h",
+        "Custo_R_kWh",
+        "Source_Files",
+    ]
+    tmp = df.copy()
+    for col in cols:
+        if col not in tmp.columns:
+            tmp[col] = pd.NA
+
+    point_df = tmp[cols].copy()
+    point_df["RPM"] = pd.to_numeric(point_df["RPM"], errors="coerce")
+    point_df["Power_kW"] = pd.to_numeric(point_df["Power_kW"], errors="coerce")
+    point_df["Consumo_kg_h"] = pd.to_numeric(point_df["Consumo_kg_h"], errors="coerce")
+    point_df["Custo_R_h"] = pd.to_numeric(point_df["Custo_R_h"], errors="coerce")
+    point_df["Custo_R_kWh"] = pd.to_numeric(point_df["Custo_R_kWh"], errors="coerce")
+    point_df = point_df.dropna(subset=["Pair_ID", "Fuel_Label", "RPM"])
+    point_df = point_df.sort_values(["Pair_Label", "Fuel_Label", "RPM"], kind="stable")
+
+    rows: List[Dict[str, object]] = []
+    for _, row in point_df.iterrows():
+        key = _normalize_plot_point_key(row.get("Pair_ID", ""), row.get("Fuel_Label", ""), row.get("RPM", pd.NA))
+        if key is None:
+            continue
+        rows.append(
+            {
+                "key": key,
+                "pair_id": key[0],
+                "pair_label": str(row.get("Pair_Label", "")).strip() or key[0],
+                "fuel_label": key[1],
+                "rpm": key[2],
+                "power_kw": _to_float(row.get("Power_kW", pd.NA), default=float("nan")),
+                "consumo_kg_h": _to_float(row.get("Consumo_kg_h", pd.NA), default=float("nan")),
+                "custo_r_h": _to_float(row.get("Custo_R_h", pd.NA), default=float("nan")),
+                "custo_r_kwh": _to_float(row.get("Custo_R_kWh", pd.NA), default=float("nan")),
+                "source_files": str(row.get("Source_Files", "")).strip(),
+            }
+        )
+    return rows
+
+
+def _resolve_plot_point_initial_selection(
+    available_points: Set[Tuple[str, str, float]],
+) -> Tuple[Dict[Tuple[str, str, float], bool], str]:
+    defaults = {key: True for key in available_points}
+    state = load_last_plot_point_selection_state()
+    if state is None:
+        return defaults, "Sem ultima selecao salva. Todos os pontos vieram marcados."
+
+    saved_available = set(state.get("available_points", set()) or set())
+    saved_selected = set(state.get("selected_points", set()) or set())
+    matched = 0
+    for key in sorted(available_points):
+        if key in saved_available:
+            defaults[key] = key in saved_selected
+            matched += 1
+    if matched == 0:
+        return defaults, "Ultima selecao salva nao combinou com este conjunto. Todos os pontos vieram marcados."
+
+    new_points = available_points - saved_available
+    selected_count = sum(1 for value in defaults.values() if value)
+    message = f"Ultima selecao carregada automaticamente: {selected_count} / {len(available_points)} ponto(s) marcados."
+    if new_points:
+        message += f" {len(new_points)} ponto(s) novo(s) vieram selecionados por padrao."
+    return defaults, message
+
+
+def prompt_plot_point_filter(df: pd.DataFrame) -> Optional[Set[Tuple[str, str, float]]]:
+    point_rows = _build_plot_point_rows(df)
+    if not point_rows:
+        print("[WARN] Nao encontrei pontos para abrir o filtro de plot FPT. Vou usar todos.")
+        return None
+    if tk is None or ttk is None or messagebox is None:
+        print("[WARN] Tkinter nao esta disponivel. Vou usar todos os pontos do FPT.")
+        return None
+
+    available_points = {row["key"] for row in point_rows}
+    initial_selection, initial_message = _resolve_plot_point_initial_selection(available_points)
+    result: Dict[str, object] = {"selected": None}
+
+    root = tk.Tk()
+    root.title("Pipeline FPT - filtro de pontos para plots")
+    root.geometry("1240x760")
+    root.minsize(1080, 640)
+
+    ttk.Label(
+        root,
+        text="Selecione os pontos que entram nos comparativos e plots do FPT. O lv_kpis_fpt.xlsx bruto continua completo.",
+        wraplength=1180,
+        justify="left",
+    ).pack(fill="x", padx=12, pady=(12, 4))
+    info_var = tk.StringVar(value=initial_message)
+    ttk.Label(root, textvariable=info_var, wraplength=1180, justify="left").pack(fill="x", padx=12, pady=(0, 8))
+
+    toolbar = ttk.Frame(root)
+    toolbar.pack(fill="x", padx=12, pady=(0, 8))
+    status_var = tk.StringVar(value="")
+
+    body = ttk.Frame(root)
+    body.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+    body.columnconfigure(0, weight=1)
+    body.rowconfigure(0, weight=1)
+
+    canvas = tk.Canvas(body, highlightthickness=0)
+    scrollbar = ttk.Scrollbar(body, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=scrollbar.set)
+    canvas.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
+
+    inner = ttk.Frame(canvas)
+    canvas_window = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+    def sync_canvas(_event: object = None) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+        canvas.itemconfigure(canvas_window, width=max(canvas.winfo_width(), inner.winfo_reqwidth()))
+
+    inner.bind("<Configure>", sync_canvas)
+    canvas.bind("<Configure>", sync_canvas)
+
+    cell_vars: Dict[Tuple[str, str, float], tk.BooleanVar] = {}
+
+    def format_point_text(row: Dict[str, object]) -> str:
+        power_kw = row.get("power_kw", float("nan"))
+        consumo_kg_h = row.get("consumo_kg_h", float("nan"))
+        custo_r_h = row.get("custo_r_h", float("nan"))
+        custo_r_kwh = row.get("custo_r_kwh", float("nan"))
+        source_files = str(row.get("source_files", "")).strip()
+        return (
+            f"PAR: {row['pair_label']}\n"
+            f"COMBUSTIVEL: {row['fuel_label']} | RPM: {row['rpm']:.0f}\n"
+            f"Power_kW={power_kw:.6g} | Consumo_kg_h={consumo_kg_h:.6g} | "
+            f"Custo_R_h={custo_r_h:.6g} | Custo_R_kWh={custo_r_kwh:.6g}\n"
+            f"Arquivos: {source_files}"
+        )
+
+    for idx, row in enumerate(point_rows):
+        key = row["key"]
+        var = tk.BooleanVar(value=bool(initial_selection.get(key, True)))
+        cell_vars[key] = var
+        chk = tk.Checkbutton(
+            inner,
+            text=format_point_text(row),
+            variable=var,
+            anchor="w",
+            justify="left",
+            wraplength=1120,
+            padx=6,
+            pady=6,
+        )
+        chk.grid(row=idx, column=0, sticky="ew")
+
+    def selected_points_now() -> Set[Tuple[str, str, float]]:
+        return {key for key, var in cell_vars.items() if bool(var.get())}
+
+    def refresh_status() -> None:
+        selected = sum(1 for var in cell_vars.values() if bool(var.get()))
+        status_var.set(f"Pontos selecionados: {selected} / {len(cell_vars)}")
+
+    for var in cell_vars.values():
+        var.trace_add("write", lambda *_args: refresh_status())
+
+    def set_all(value: bool) -> None:
+        for var in cell_vars.values():
+            var.set(value)
+
+    def load_last_selection() -> None:
+        defaults, message = _resolve_plot_point_initial_selection(available_points)
+        for key, var in cell_vars.items():
+            var.set(bool(defaults.get(key, True)))
+        info_var.set(message)
+
+    def save_current_selection() -> None:
+        selected = selected_points_now()
+        save_last_plot_point_selection_state(selected, available_points)
+        info_var.set(f"Selecao atual salva como ultima: {len(selected)} / {len(available_points)} ponto(s) marcados.")
+
+    def confirm() -> None:
+        selected = selected_points_now()
+        if not selected:
+            messagebox.showerror("Pipeline FPT", "Selecione pelo menos um ponto para gerar os plots.", parent=root)
+            return
+        save_last_plot_point_selection_state(selected, available_points)
+        result["selected"] = selected
+        root.destroy()
+
+    def cancel() -> None:
+        root.destroy()
+
+    ttk.Button(toolbar, text="Selecionar tudo", command=lambda: set_all(True)).pack(side="left")
+    ttk.Button(toolbar, text="Limpar tudo", command=lambda: set_all(False)).pack(side="left", padx=(8, 0))
+    ttk.Button(toolbar, text="Carregar ultima", command=load_last_selection).pack(side="left", padx=(8, 0))
+    ttk.Button(toolbar, text="Salvar atual", command=save_current_selection).pack(side="left", padx=(8, 0))
+    ttk.Label(toolbar, textvariable=status_var).pack(side="right")
+    refresh_status()
+
+    buttons = ttk.Frame(root)
+    buttons.pack(fill="x", padx=12, pady=(0, 12))
+    ttk.Button(buttons, text="Cancelar", command=cancel).pack(side="right")
+    ttk.Button(buttons, text="Gerar comparativos e plots", command=confirm).pack(side="right", padx=(0, 8))
+
+    root.protocol("WM_DELETE_WINDOW", cancel)
+    root.state("zoomed")
+    root.mainloop()
+
+    selected = result.get("selected")
+    if selected is None:
+        print("[WARN] Filtro de pontos cancelado. Vou usar todos os pontos do FPT.")
+        return None
+    return set(selected)
+
+
+def apply_plot_point_filter(
+    df: pd.DataFrame,
+    selected_points: Optional[Set[Tuple[str, str, float]]],
+) -> pd.DataFrame:
+    if df is None:
+        return pd.DataFrame()
+    if df.empty or selected_points is None:
+        return df.copy()
+
+    pair_ids = df.get("Pair_ID", pd.Series(pd.NA, index=df.index)).astype(str).str.strip()
+    fuel_labels = df.get("Fuel_Label", pd.Series(pd.NA, index=df.index)).astype(str).str.strip()
+    rpms = pd.to_numeric(df.get("RPM", pd.Series(pd.NA, index=df.index)), errors="coerce").round(6)
+    mask = pd.Series(False, index=df.index, dtype="bool")
+    for pair_id, fuel_label, rpm_value in selected_points:
+        mask = mask | (pair_ids.eq(pair_id) & fuel_labels.eq(fuel_label) & rpms.eq(round(float(rpm_value), 6)))
+    kept = int(mask.sum())
+    print(f"[INFO] Filtro de pontos FPT: {kept} linha(s) mantida(s) para comparativos e plots.")
+    return df.loc[mask].copy()
+
+
 def _scaled_tick_formatter(divisor: float) -> FuncFormatter:
     return FuncFormatter(lambda value, _pos: f"{(value / divisor):g}")
 
@@ -1237,6 +1544,7 @@ def main() -> None:
     speed_col = defaults_cfg.get(norm_key("SPEED_COL"), "SPEED") or "SPEED"
     rpm_round_digits = int(_to_float(defaults_cfg.get(norm_key("RPM_ROUND_DIGITS"), "0"), default=0.0))
     pair_selection_mode = defaults_cfg.get(norm_key("PAIR_SELECTION_MODE"), "gui") or "gui"
+    plot_point_filter_mode = defaults_cfg.get(norm_key("PLOT_POINT_FILTER_MODE"), "gui") or "gui"
 
     all_files = discover_input_files(raw_dir, "")
     filtered_files = discover_input_files(raw_dir, include_regex)
@@ -1307,17 +1615,24 @@ def main() -> None:
     kpi_path = safe_to_excel(agg_df.sort_values(["Pair_ID", "Fuel_Label", "RPM"]).copy(), out_dir / "lv_kpis_fpt.xlsx")
     print(f"[OK] KPI salvo: {kpi_path}")
 
-    compare_df = build_compare_table(agg_df)
+    plot_df = agg_df.copy()
+    if norm_key(plot_point_filter_mode) not in {"off", "skip", "none", "0", "false"}:
+        selected_plot_points = prompt_plot_point_filter(agg_df)
+        plot_df = apply_plot_point_filter(agg_df, selected_plot_points)
+    else:
+        print("[INFO] Filtro de pontos de plot FPT desativado por configuracao.")
+
+    compare_df = build_compare_table(plot_df)
     if not compare_df.empty:
         cmp_path = safe_to_excel(compare_df, out_dir / "compare_rpm_diesel_vs_e94h6_fpt.xlsx")
         print(f"[OK] Comparativo salvo: {cmp_path}")
 
     pair_values = [pair.pair_id for pair in selected_pairs]
     if len(pair_values) == 1:
-        make_plots(agg_df, plot_dir=plot_dir)
+        make_plots(plot_df, plot_dir=plot_dir)
     else:
         for pair in selected_pairs:
-            pair_df = agg_df[agg_df["Pair_ID"].eq(pair.pair_id)].copy()
+            pair_df = plot_df[plot_df["Pair_ID"].eq(pair.pair_id)].copy()
             if pair_df.empty:
                 continue
             pair_plot_dir = plot_dir / pair.pair_id

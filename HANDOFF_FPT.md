@@ -78,6 +78,9 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - os nomes longos dos arquivos agora aparecem com quebra de linha no seletor, sem depender de scroll horizontal;
 - a lista de pares selecionados tambem saiu do layout tabular horizontal e passou a usar bloco com quebra de linha;
 - se quiser bypass da GUI, usar `PAIR_SELECTION_MODE=auto` na aba `Defaults`;
+- o filtro de pontos para comparativos/plots usa `PLOT_POINT_FILTER_MODE=gui` por default e aceita `off` para bypass;
+- a ultima selecao de pontos fica salva em `%LOCALAPPDATA%\pipeline_fpt\plot_point_filter_last.json`;
+- esse filtro atua nos comparativos e plots, mas o `lv_kpis_fpt.xlsx` continua sendo salvo bruto antes dele;
 - a ultima selecao de pares fica salva localmente em `%LOCALAPPDATA%\pipeline_fpt\last_pair_selection.json`;
 - o baseline diesel e o merge de comparacao agora acontecem por `Pair_ID`, nao mais por combustivel puro no conjunto inteiro;
 - ajustar `FILE_INCLUDE_REGEX` no config continua sendo util para reduzir a lista de arquivos mostrada na GUI;

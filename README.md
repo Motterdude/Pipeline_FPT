@@ -58,6 +58,9 @@ Parametros principais:
 - `PAIR_SELECTION_MODE`:
   - `gui` = abre a GUI de pares e deixa escolher manualmente
   - `auto` = tenta parear diesel e etanol automaticamente pela ordem dos arquivos filtrados
+- `PLOT_POINT_FILTER_MODE`:
+  - `gui` = abre a GUI de selecao de pontos antes dos comparativos e plots
+  - `off` = pula esse filtro
 - densidades, custos e `LHV`
 - cenarios de maquinas (`horas/ano` e `diesel L/h`)
 
@@ -75,6 +78,13 @@ Compatibilidade de leitura:
 
 - o leitor agora aceita tanto o layout FPT antigo com aba `D` quanto o layout alternativo do arquivo `SWay_P8...`, que vem com `Planilha1`, uma linha numerica antes do cabecalho real e nomes como `qm Fuel`, `P dyno` e `n engine`;
 - quando o layout alternativo e detectado, o pipeline ajusta `sheet/header` automaticamente e informa isso no log.
+
+Filtro de pontos para plot:
+
+- depois de salvar o `lv_kpis_fpt.xlsx` bruto, o pipeline pode abrir uma GUI para marcar/desmarcar pontos de `Pair_ID + Fuel_Label + RPM`;
+- a ultima selecao fica salva em `%LOCALAPPDATA%\pipeline_fpt\plot_point_filter_last.json`;
+- o filtro vale para os comparativos e plots da rodada, mas nao apaga pontos do `lv_kpis_fpt.xlsx` bruto;
+- isso permite excluir manualmente outliers de plot sem forcar deteccao automatica no codigo.
 
 ## Saidas
 
