@@ -26,14 +26,20 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 
 - `Consumo_kg_h`
 - `Consumo_L_h`
+- `Air_kg_h`
+- `Air_kg_h_kW`
 - `Custo_R_h`
 - `Custo_R_kWh`
 - `n_th` e `n_th_pct`
 - baseline diesel por `RPM`
+- `Diesel_Baseline_Air_kg_h`
+- `Diesel_Baseline_Air_kg_h_kW`
 - `Economia_vs_Diesel_R_h`
 - `Economia_vs_Diesel_pct`
 - `Economia_vs_Diesel_R_kWh`
 - `Economia_vs_Diesel_R_kWh_pct`
+- `Delta_Air_kg_h_vs_Diesel`
+- `Delta_Air_kg_h_kW_vs_Diesel`
 - cenarios de maquinas:
   - colheitadeira
   - trator transbordo
@@ -54,6 +60,8 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - consumo volumetrico vs RPM
 - custo horario vs RPM
 - custo especifico `R$/kWh` vs RPM
+- vazao de ar `kg/h` vs RPM
+- vazao de ar especifica `kg/h/kW` vs RPM
 - `n_th` vs RPM
 - economia `R$/h` vs RPM
 - economia `%` vs RPM
@@ -86,6 +94,7 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - o baseline diesel e o merge de comparacao agora acontecem por `Pair_ID`, nao mais por combustivel puro no conjunto inteiro;
 - ajustar `FILE_INCLUDE_REGEX` no config continua sendo util para reduzir a lista de arquivos mostrada na GUI;
 - o leitor agora reconhece o layout alternativo do arquivo `SWay_P8...D85B15.xlsx`, que nao usa a aba `D` e nao traz os mesmos nomes de coluna do conjunto FPT anterior;
+- a vazao de ar entra automaticamente quando a planilha trouxer `Sensyflow` ou `qm Air`;
 - manter `raw_FPT/` fora do Git
 - versionar `out_FPT/` quando os resultados precisarem acompanhar o codigo
 - `xlsx` e `png` sao marcados como binarios em `.gitattributes`

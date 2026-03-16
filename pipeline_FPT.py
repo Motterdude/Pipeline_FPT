@@ -49,6 +49,7 @@ FPT_COLUMN_ALIASES = {
     "fuel_mass": ["FB_VAL", "qm Fuel", "qm_fuel", "Fuel mass", "Fuel_Mass"],
     "power": ["P_dyno", "P dyno", "P dyno Corr", "P_dyno_Corr", "Power"],
     "speed": ["SPEED", "n engine", "n_engine", "Engine Speed", "Epm_nEng"],
+    "air_mass": ["Sensyflow", "qm Air", "qmair", "qm_air", "Air mass", "Air_Mass"],
 }
 
 MACHINE_SCENARIO_SPECS = [
@@ -271,7 +272,7 @@ def load_fpt_measure_dataframe(
     fuel_mass_col: str,
     power_col: str,
     speed_col: str,
-) -> Tuple[pd.DataFrame, str, str, str]:
+) -> Tuple[pd.DataFrame, str, str, str, Optional[str]]:
     workbook = pd.ExcelFile(path)
     sheet_candidates: List[str] = []
     requested_sheet = str(sheet_name or "").strip()
@@ -293,12 +294,17 @@ def load_fpt_measure_dataframe(
                 fb_col = resolve_col_with_aliases(df, fuel_mass_col, FPT_COLUMN_ALIASES["fuel_mass"])
                 p_col = resolve_col_with_aliases(df, power_col, FPT_COLUMN_ALIASES["power"])
                 rpm_col = resolve_col_with_aliases(df, speed_col, FPT_COLUMN_ALIASES["speed"])
+                air_col = None
+                try:
+                    air_col = resolve_col_with_aliases(df, "air_mass", FPT_COLUMN_ALIASES["air_mass"])
+                except KeyError:
+                    air_col = None
                 if candidate_sheet != requested_sheet or header_row != 0:
                     print(
                         f"[INFO] {path.name}: usei sheet='{candidate_sheet}' header={header_row} "
                         f"para compatibilizar o layout do arquivo."
                     )
-                return df, fb_col, p_col, rpm_col
+                return df, fb_col, p_col, rpm_col, air_col
             except KeyError as exc:
                 errors.append(f"{candidate_sheet}/header={header_row}: {exc}")
                 continue
@@ -662,7 +668,7 @@ def read_fpt_xlsx(
         print(f"[INFO] Pulei {path.name}: combustivel nao reconhecido no nome.")
         return pd.DataFrame()
 
-    df, fb_col, p_col, rpm_col = load_fpt_measure_dataframe(
+    df, fb_col, p_col, rpm_col, air_col = load_fpt_measure_dataframe(
         path,
         sheet_name=sheet_name,
         fuel_mass_col=fuel_mass_col,
@@ -679,6 +685,7 @@ def read_fpt_xlsx(
             "Consumo_kg_h": pd.to_numeric(df[fb_col], errors="coerce"),
             "Power_kW": pd.to_numeric(df[p_col], errors="coerce"),
             "Speed_RPM_raw": pd.to_numeric(df[rpm_col], errors="coerce"),
+            "Air_kg_h": pd.to_numeric(df[air_col], errors="coerce") if air_col else pd.NA,
         }
     )
     out = out.dropna(subset=["Consumo_kg_h", "Power_kW", "Speed_RPM_raw"]).copy()
@@ -697,8 +704,10 @@ def aggregate_curve_rows(df: pd.DataFrame) -> pd.DataFrame:
             Speed_RPM=("Speed_RPM_raw", "mean"),
             Power_kW=("Power_kW", "mean"),
             Consumo_kg_h=("Consumo_kg_h", "mean"),
+            Air_kg_h=("Air_kg_h", "mean"),
             Power_kW_sd=("Power_kW", "std"),
             Consumo_kg_h_sd=("Consumo_kg_h", "std"),
+            Air_kg_h_sd=("Air_kg_h", "std"),
             N_points=("Power_kW", "count"),
             Source_Files=("Source_File", lambda s: "; ".join(sorted(set(str(v) for v in s if str(v).strip())))),
         )
@@ -733,12 +742,14 @@ def compute_base_metrics(df: pd.DataFrame) -> pd.DataFrame:
     fuel_cost = pd.to_numeric(out["Fuel_Cost_R_L"], errors="coerce")
     lhv = pd.to_numeric(out["LHV_kJ_kg"], errors="coerce")
     consumo_kg_h = pd.to_numeric(out["Consumo_kg_h"], errors="coerce")
+    air_kg_h = pd.to_numeric(out.get("Air_kg_h", pd.NA), errors="coerce")
     power_kw = pd.to_numeric(out["Power_kW"], errors="coerce")
 
     out["Consumo_L_h"] = (consumo_kg_h * 1000.0 / fuel_density).where(fuel_density.gt(0), pd.NA)
     out["Custo_R_h"] = (pd.to_numeric(out["Consumo_L_h"], errors="coerce") * fuel_cost).where(fuel_cost.gt(0), pd.NA)
     custo_r_h = pd.to_numeric(out["Custo_R_h"], errors="coerce")
     out["Custo_R_kWh"] = (custo_r_h / power_kw).where(power_kw.gt(0), pd.NA)
+    out["Air_kg_h_kW"] = (air_kg_h / power_kw).where(power_kw.gt(0), pd.NA)
     mdot = consumo_kg_h / 3600.0
     out["n_th"] = (power_kw / (mdot * lhv)).where((power_kw > 0) & (mdot > 0) & (lhv > 0), pd.NA)
     out["n_th_pct"] = pd.to_numeric(out["n_th"], errors="coerce") * 100.0
@@ -752,13 +763,26 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
         print("[WARN] Nao encontrei pontos D85B15 para baseline.")
         return out
 
-    baseline_cols = ["Pair_ID", "RPM", "Consumo_kg_h", "Consumo_L_h", "Custo_R_h", "Custo_R_kWh", "n_th_pct", "Power_kW"]
+    baseline_cols = [
+        "Pair_ID",
+        "RPM",
+        "Consumo_kg_h",
+        "Consumo_L_h",
+        "Custo_R_h",
+        "Custo_R_kWh",
+        "Air_kg_h",
+        "Air_kg_h_kW",
+        "n_th_pct",
+        "Power_kW",
+    ]
     diesel = diesel[baseline_cols].rename(
         columns={
             "Consumo_kg_h": "Diesel_Baseline_Consumo_kg_h",
             "Consumo_L_h": "Diesel_Baseline_Consumo_L_h",
             "Custo_R_h": "Diesel_Baseline_Custo_R_h",
             "Custo_R_kWh": "Diesel_Baseline_Custo_R_kWh",
+            "Air_kg_h": "Diesel_Baseline_Air_kg_h",
+            "Air_kg_h_kW": "Diesel_Baseline_Air_kg_h_kW",
             "n_th_pct": "Diesel_Baseline_n_th_pct",
             "Power_kW": "Diesel_Baseline_Power_kW",
         }
@@ -774,6 +798,10 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
     cons_v_bl = pd.to_numeric(out["Diesel_Baseline_Consumo_L_h"], errors="coerce")
     custo_kwh = pd.to_numeric(out["Custo_R_kWh"], errors="coerce")
     custo_kwh_bl = pd.to_numeric(out["Diesel_Baseline_Custo_R_kWh"], errors="coerce")
+    air_m = pd.to_numeric(out.get("Air_kg_h", pd.NA), errors="coerce")
+    air_m_bl = pd.to_numeric(out.get("Diesel_Baseline_Air_kg_h", pd.NA), errors="coerce")
+    air_sp = pd.to_numeric(out.get("Air_kg_h_kW", pd.NA), errors="coerce")
+    air_sp_bl = pd.to_numeric(out.get("Diesel_Baseline_Air_kg_h_kW", pd.NA), errors="coerce")
     nth = pd.to_numeric(out["n_th_pct"], errors="coerce")
     nth_bl = pd.to_numeric(out["Diesel_Baseline_n_th_pct"], errors="coerce")
 
@@ -783,6 +811,8 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
     out["Economia_vs_Diesel_R_kWh_pct"] = (100.0 * (custo_kwh / custo_kwh_bl - 1.0)).where(custo_kwh_bl.gt(0), pd.NA)
     out["Delta_Consumo_kg_h_vs_Diesel"] = cons_m - cons_m_bl
     out["Delta_Consumo_L_h_vs_Diesel"] = cons_v - cons_v_bl
+    out["Delta_Air_kg_h_vs_Diesel"] = air_m - air_m_bl
+    out["Delta_Air_kg_h_kW_vs_Diesel"] = air_sp - air_sp_bl
     out["Delta_n_th_pct_vs_Diesel"] = nth - nth_bl
 
     diesel_mask = out["Fuel_Label"].eq("D85B15")
@@ -793,6 +823,8 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
         "Economia_vs_Diesel_R_kWh_pct",
         "Delta_Consumo_kg_h_vs_Diesel",
         "Delta_Consumo_L_h_vs_Diesel",
+        "Delta_Air_kg_h_vs_Diesel",
+        "Delta_Air_kg_h_kW_vs_Diesel",
         "Delta_n_th_pct_vs_Diesel",
     ]
     for col in zero_cols:
@@ -887,6 +919,8 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
             "Consumo_L_h": "Diesel_Consumo_L_h",
             "Custo_R_h": "Diesel_Custo_R_h",
             "Custo_R_kWh": "Diesel_Custo_R_kWh",
+            "Air_kg_h": "Diesel_Air_kg_h",
+            "Air_kg_h_kW": "Diesel_Air_kg_h_kW",
             "n_th_pct": "Diesel_n_th_pct",
         }
     )
@@ -898,6 +932,8 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
             "Consumo_L_h": "E94H6_Consumo_L_h",
             "Custo_R_h": "E94H6_Custo_R_h",
             "Custo_R_kWh": "E94H6_Custo_R_kWh",
+            "Air_kg_h": "E94H6_Air_kg_h",
+            "Air_kg_h_kW": "E94H6_Air_kg_h_kW",
             "n_th_pct": "E94H6_n_th_pct",
         }
     )
@@ -912,6 +948,8 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
         "Diesel_Consumo_L_h",
         "Diesel_Custo_R_h",
         "Diesel_Custo_R_kWh",
+        "Diesel_Air_kg_h",
+        "Diesel_Air_kg_h_kW",
         "Diesel_n_th_pct",
     ]
     cols_right = [
@@ -923,6 +961,8 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
         "E94H6_Consumo_L_h",
         "E94H6_Custo_R_h",
         "E94H6_Custo_R_kWh",
+        "E94H6_Air_kg_h",
+        "E94H6_Air_kg_h_kW",
         "E94H6_n_th_pct",
         "Economia_vs_Diesel_R_h",
         "Economia_vs_Diesel_pct",
@@ -1509,6 +1549,22 @@ def make_plots(df: pd.DataFrame, plot_dir: Path) -> None:
         title="Specific fuel cost vs RPM",
         filename="custo_especifico_r_kwh_vs_rpm.png",
         y_label="Specific fuel cost (R$/kWh)",
+        plot_dir=plot_dir,
+    )
+    plot_dual_fuel_metric(
+        df,
+        y_col="Air_kg_h",
+        title="Air mass flow vs RPM",
+        filename="vazao_ar_kg_h_vs_rpm.png",
+        y_label="Air mass flow (kg/h)",
+        plot_dir=plot_dir,
+    )
+    plot_dual_fuel_metric(
+        df,
+        y_col="Air_kg_h_kW",
+        title="Air mass flow per power vs RPM",
+        filename="vazao_ar_kg_h_kw_vs_rpm.png",
+        y_label="Air mass flow per power (kg/h/kW)",
         plot_dir=plot_dir,
     )
     plot_dual_fuel_metric(

@@ -15,10 +15,19 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
   - `Custo_R_kWh`
   - `Economia_vs_Diesel_R_kWh`
   - `Economia_vs_Diesel_R_kWh_pct`
+- Metricas novas de vazao de ar:
+  - `Air_kg_h`
+  - `Air_kg_h_kW`
+  - `Diesel_Baseline_Air_kg_h`
+  - `Diesel_Baseline_Air_kg_h_kW`
+  - `Delta_Air_kg_h_vs_Diesel`
+  - `Delta_Air_kg_h_kW_vs_Diesel`
 - Plots novos:
   - `custo_especifico_r_kwh_vs_rpm.png`
   - `economia_r_kwh_vs_diesel_rpm.png`
   - `economia_pct_r_kwh_vs_diesel_rpm.png`
+  - `vazao_ar_kg_h_vs_rpm.png`
+  - `vazao_ar_kg_h_kw_vs_rpm.png`
 
 ### Changed
 
@@ -29,6 +38,7 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
 - Os seletores Diesel/Etanol passaram a mostrar nomes longos com quebra de linha, sem slider horizontal.
 - A lista de pares selecionados passou a mostrar Diesel/Etanol com quebra de linha, sem tabela horizontal.
 - O leitor passou a detectar automaticamente o layout alternativo do arquivo `SWay_P8...D85B15.xlsx`, com `Planilha1`, cabecalho na segunda linha e aliases de coluna (`qm Fuel`, `P dyno`, `n engine`).
+- O leitor agora tambem detecta vazao de ar tanto como `Sensyflow` quanto como `qm Air`, sem depender de ajuste manual por arquivo.
 - O fluxo do FPT agora salva o `lv_kpis_fpt.xlsx` bruto e so depois aplica o filtro manual de pontos para comparativos e plots.
 
 ## 2026-03-12

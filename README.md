@@ -13,6 +13,8 @@ Pipeline standalone para comparar um motor Diesel `D85B15` vs Etanol `E94H6` a p
 - Compara:
   - consumo massico
   - consumo volumetrico
+  - vazao de ar
+  - vazao de ar por potencia
   - custo horario
   - custo especifico em `R$/kWh`
   - `n_th`
@@ -77,6 +79,7 @@ Observacoes da selecao de pares:
 Compatibilidade de leitura:
 
 - o leitor agora aceita tanto o layout FPT antigo com aba `D` quanto o layout alternativo do arquivo `SWay_P8...`, que vem com `Planilha1`, uma linha numerica antes do cabecalho real e nomes como `qm Fuel`, `P dyno` e `n engine`;
+- a vazao de ar e lida automaticamente como `Sensyflow` no layout antigo e como `qm Air` no layout SWay;
 - quando o layout alternativo e detectado, o pipeline ajusta `sheet/header` automaticamente e informa isso no log.
 
 Filtro de pontos para plot:
@@ -97,6 +100,8 @@ Inclui tambem:
 
 - `out_FPT/plots/power_kw_vs_rpm.png`
 - `out_FPT/plots/custo_especifico_r_kwh_vs_rpm.png`
+- `out_FPT/plots/vazao_ar_kg_h_vs_rpm.png`
+- `out_FPT/plots/vazao_ar_kg_h_kw_vs_rpm.png`
 - `out_FPT/plots/economia_r_kwh_vs_diesel_rpm.png`
 - `out_FPT/plots/economia_pct_r_kwh_vs_diesel_rpm.png`
 
