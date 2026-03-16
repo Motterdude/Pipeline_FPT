@@ -912,6 +912,7 @@ def compute_base_metrics(df: pd.DataFrame) -> pd.DataFrame:
     power_kw = pd.to_numeric(out["Power_kW"], errors="coerce")
     torque_nm = pd.to_numeric(out.get("Torque_Nm", pd.NA), errors="coerce")
     speed_rpm = pd.to_numeric(out.get("Speed_RPM", out.get("RPM", pd.NA)), errors="coerce")
+    intake_rel_mbar = pd.to_numeric(out.get("P_i_MF_mbar", pd.NA), errors="coerce")
     comp_inlet_rel_mbar = pd.to_numeric(out.get("P_B_Compr_rel_mbar", pd.NA), errors="coerce")
     comp_outlet_rel_mbar = pd.to_numeric(out.get("P_B_IC_rel_mbar", pd.NA), errors="coerce")
     comp_inlet_temp_c = pd.to_numeric(out.get("T_AIR_C", pd.NA), errors="coerce")
@@ -926,8 +927,10 @@ def compute_base_metrics(df: pd.DataFrame) -> pd.DataFrame:
     out["Custo_R_kWh"] = (custo_r_h / power_kw).where(power_kw.gt(0), pd.NA)
     out["Air_kg_h_kW"] = (air_kg_h / power_kw).where(power_kw.gt(0), pd.NA)
     air_mdot = air_kg_h / 3600.0
+    out["P_i_MF_abs_mbar"] = (intake_rel_mbar + ETA_V_REF_PRESSURE_MBAR).where((intake_rel_mbar + ETA_V_REF_PRESSURE_MBAR).gt(0), pd.NA)
     out["P_B_Compr_abs_mbar"] = (comp_inlet_rel_mbar + ETA_V_REF_PRESSURE_MBAR).where((comp_inlet_rel_mbar + ETA_V_REF_PRESSURE_MBAR).gt(0), pd.NA)
     out["P_B_IC_abs_mbar"] = (comp_outlet_rel_mbar + ETA_V_REF_PRESSURE_MBAR).where((comp_outlet_rel_mbar + ETA_V_REF_PRESSURE_MBAR).gt(0), pd.NA)
+    intake_abs_pa = pd.to_numeric(out["P_i_MF_abs_mbar"], errors="coerce") * 100.0
     comp_inlet_abs_pa = pd.to_numeric(out["P_B_Compr_abs_mbar"], errors="coerce") * 100.0
     comp_outlet_abs_pa = pd.to_numeric(out["P_B_IC_abs_mbar"], errors="coerce") * 100.0
     out["Compressor_PRatio_abs"] = (comp_outlet_abs_pa / comp_inlet_abs_pa).where(comp_inlet_abs_pa.gt(0), pd.NA)
@@ -941,6 +944,7 @@ def compute_base_metrics(df: pd.DataFrame) -> pd.DataFrame:
     out["Compressor_VolFlow_m3_s"] = (air_mdot / rho_moist).where((air_mdot > 0) & rho_moist.gt(0), pd.NA)
     intake_temp_k = intake_temp_c + 273.15
     rho_ref = ((ETA_V_REF_PRESSURE_MBAR * 100.0) / (AIR_GAS_CONSTANT_J_KG_K * intake_temp_k)).where(intake_temp_k.gt(0), pd.NA)
+    rho_intake = (intake_abs_pa / (AIR_GAS_CONSTANT_J_KG_K * intake_temp_k)).where(intake_temp_k.gt(0) & intake_abs_pa.gt(0), pd.NA)
     engine_disp_total_m3 = engine_disp_l / 1000.0
     engine_disp_per_cyl_m3 = (engine_disp_total_m3 / ENGINE_CYLINDERS).where(engine_disp_total_m3.gt(0), pd.NA) if ENGINE_CYLINDERS > 0 else pd.Series(pd.NA, index=out.index)
     theoretical_volume_flow_m3_s = (engine_disp_per_cyl_m3 * ENGINE_CYLINDERS * speed_rpm / 2.0 / 60.0).where(speed_rpm.gt(0), pd.NA)
@@ -956,6 +960,11 @@ def compute_base_metrics(df: pd.DataFrame) -> pd.DataFrame:
         pd.NA,
     )
     out["Eta_v_pct"] = pd.to_numeric(out["Eta_v"], errors="coerce") * 100.0
+    out["Eta_v_corr_press"] = (air_mdot / (rho_intake * theoretical_volume_flow_m3_s)).where(
+        (air_mdot > 0) & rho_intake.gt(0) & theoretical_volume_flow_m3_s.gt(0),
+        pd.NA,
+    )
+    out["Eta_v_corr_press_pct"] = pd.to_numeric(out["Eta_v_corr_press"], errors="coerce") * 100.0
     delta_t_ic = pre_ic_temp_c - intake_temp_c
     out["Q_intercooler_kW"] = (air_mdot * AIR_CP_KJ_KG_K * delta_t_ic).where(
         (air_mdot > 0) & delta_t_ic.notna(),
@@ -986,6 +995,7 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
         "Air_kg_h",
         "Air_kg_h_kW",
         "Eta_v_pct",
+        "Eta_v_corr_press_pct",
         "Q_intercooler_kW",
         "n_th_pct",
         "Power_kW",
@@ -1001,6 +1011,7 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
             "Air_kg_h": "Diesel_Baseline_Air_kg_h",
             "Air_kg_h_kW": "Diesel_Baseline_Air_kg_h_kW",
             "Eta_v_pct": "Diesel_Baseline_Eta_v_pct",
+            "Eta_v_corr_press_pct": "Diesel_Baseline_Eta_v_corr_press_pct",
             "Q_intercooler_kW": "Diesel_Baseline_Q_intercooler_kW",
             "n_th_pct": "Diesel_Baseline_n_th_pct",
             "Power_kW": "Diesel_Baseline_Power_kW",
@@ -1027,6 +1038,8 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
     air_sp_bl = pd.to_numeric(out.get("Diesel_Baseline_Air_kg_h_kW", pd.NA), errors="coerce")
     eta_v = pd.to_numeric(out.get("Eta_v_pct", pd.NA), errors="coerce")
     eta_v_bl = pd.to_numeric(out.get("Diesel_Baseline_Eta_v_pct", pd.NA), errors="coerce")
+    eta_v_corr = pd.to_numeric(out.get("Eta_v_corr_press_pct", pd.NA), errors="coerce")
+    eta_v_corr_bl = pd.to_numeric(out.get("Diesel_Baseline_Eta_v_corr_press_pct", pd.NA), errors="coerce")
     q_ic = pd.to_numeric(out.get("Q_intercooler_kW", pd.NA), errors="coerce")
     q_ic_bl = pd.to_numeric(out.get("Diesel_Baseline_Q_intercooler_kW", pd.NA), errors="coerce")
     nth = pd.to_numeric(out["n_th_pct"], errors="coerce")
@@ -1043,6 +1056,7 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
     out["Delta_Air_kg_h_vs_Diesel"] = air_m - air_m_bl
     out["Delta_Air_kg_h_kW_vs_Diesel"] = air_sp - air_sp_bl
     out["Delta_Eta_v_pct_vs_Diesel"] = eta_v - eta_v_bl
+    out["Delta_Eta_v_corr_press_pct_vs_Diesel"] = eta_v_corr - eta_v_corr_bl
     out["Delta_Q_intercooler_kW_vs_Diesel"] = q_ic - q_ic_bl
     out["Delta_n_th_pct_vs_Diesel"] = nth - nth_bl
 
@@ -1059,6 +1073,7 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
         "Delta_Air_kg_h_vs_Diesel",
         "Delta_Air_kg_h_kW_vs_Diesel",
         "Delta_Eta_v_pct_vs_Diesel",
+        "Delta_Eta_v_corr_press_pct_vs_Diesel",
         "Delta_Q_intercooler_kW_vs_Diesel",
         "Delta_n_th_pct_vs_Diesel",
     ]
@@ -1162,6 +1177,7 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
             "Compressor_VolFlow_m3_s": "Diesel_Compressor_VolFlow_m3_s",
             "P_i_MF_mbar": "Diesel_P_i_MF_mbar",
             "Eta_v_pct": "Diesel_Eta_v_pct",
+            "Eta_v_corr_press_pct": "Diesel_Eta_v_corr_press_pct",
             "Q_intercooler_kW": "Diesel_Q_intercooler_kW",
             "n_th_pct": "Diesel_n_th_pct",
         }
@@ -1182,6 +1198,7 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
             "Compressor_VolFlow_m3_s": "E94H6_Compressor_VolFlow_m3_s",
             "P_i_MF_mbar": "E94H6_P_i_MF_mbar",
             "Eta_v_pct": "E94H6_Eta_v_pct",
+            "Eta_v_corr_press_pct": "E94H6_Eta_v_corr_press_pct",
             "Q_intercooler_kW": "E94H6_Q_intercooler_kW",
             "n_th_pct": "E94H6_n_th_pct",
         }
@@ -1205,6 +1222,7 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
         "Diesel_Compressor_VolFlow_m3_s",
         "Diesel_P_i_MF_mbar",
         "Diesel_Eta_v_pct",
+        "Diesel_Eta_v_corr_press_pct",
         "Diesel_Q_intercooler_kW",
         "Diesel_n_th_pct",
     ]
@@ -1225,6 +1243,7 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
         "E94H6_Compressor_VolFlow_m3_s",
         "E94H6_P_i_MF_mbar",
         "E94H6_Eta_v_pct",
+        "E94H6_Eta_v_corr_press_pct",
         "E94H6_Q_intercooler_kW",
         "E94H6_n_th_pct",
         "Economia_vs_Diesel_R_h",
@@ -1947,6 +1966,14 @@ def make_plots(df: pd.DataFrame, plot_dir: Path) -> None:
         title="Volumetric efficiency vs RPM",
         filename="eficiencia_volumetrica_vs_rpm.png",
         y_label="Volumetric efficiency (%)",
+        plot_dir=plot_dir,
+    )
+    plot_dual_fuel_metric(
+        df,
+        y_col="Eta_v_corr_press_pct",
+        title="Pressure-corrected volumetric efficiency vs RPM",
+        filename="eficiencia_volumetrica_corrigida_pressao_vs_rpm.png",
+        y_label="Pressure-corrected volumetric efficiency (%)",
         plot_dir=plot_dir,
     )
     plot_dual_fuel_metric(

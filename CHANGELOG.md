@@ -27,8 +27,12 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
 - Metricas novas de enchimento e troca termica:
   - `Eta_v`
   - `Eta_v_pct`
+  - `Eta_v_corr_press`
+  - `Eta_v_corr_press_pct`
   - `Diesel_Baseline_Eta_v_pct`
+  - `Diesel_Baseline_Eta_v_corr_press_pct`
   - `Delta_Eta_v_pct_vs_Diesel`
+  - `Delta_Eta_v_corr_press_pct_vs_Diesel`
   - `Q_intercooler_kW`
   - `Diesel_Baseline_Q_intercooler_kW`
   - `Delta_Q_intercooler_kW_vs_Diesel`
@@ -61,6 +65,7 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
   - `curva_compressor_pratio_vs_vazao_massica_kg_h.png`
   - `curva_compressor_pratio_vs_vazao_volumetrica_m3_s.png`
   - `eficiencia_volumetrica_vs_rpm.png`
+  - `eficiencia_volumetrica_corrigida_pressao_vs_rpm.png`
   - `potencia_intercooler_kw_vs_rpm.png`
 
 ### Changed
@@ -80,6 +85,7 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
 - A vazao volumetrica do compressor agora considera umidade relativa via `CAIR_H1` ou `RH air`; quando a umidade nao existe no arquivo, o pipeline assume `0% RH` e informa isso no log.
 - Corrigida a heuristica de conversao de pressao para preservar leituras negativas pequenas em `mBar` no `p b compr` do SWay; antes disso, o diesel do `C13` ficava com `PRatio_abs` invalido e sumia da curva do compressor.
 - A eficiencia volumetrica agora usa `1013 mBar` de referencia, `T_i_MF` como temperatura de referencia e cilindrada detectada pelo nome do arquivo (`NEF67/NEF6 -> 6,7 L`; `C13/Cursore 13/Cursor 13 -> 12,9 L`) com `6` cilindros.
+- Adicionada a eficiencia volumetrica corrigida pela pressao do coletor, usando `P_i_MF_abs = P_i_MF_rel + 1013 mBar` e `T_i_MF`, para separar o enchimento real de aspiracao do ganho aparente por boost.
 - A potencia dissipada no intercooler agora usa `Air_kg_h * cp_ar * (T_B_IC - T_i_MF)`, com `cp_ar = 1,005 kJ/kg.K`.
 - O fluxo do FPT agora salva o `lv_kpis_fpt.xlsx` bruto e so depois aplica o filtro manual de pontos para comparativos e plots.
 

@@ -20,6 +20,7 @@ Pipeline standalone para comparar um motor Diesel `D85B15` vs Etanol `E94H6` a p
   - `BMEP` em `bar`
   - curva de operacao do turbo-compressor
   - eficiencia volumetrica
+  - eficiencia volumetrica corrigida pela pressao do coletor
   - potencia dissipada no intercooler
   - custo horario
   - custo especifico em `R$/kWh`
@@ -100,6 +101,11 @@ Premissas termofluidicas:
   - temperatura de referencia do coletor `T_i_MF`
   - cilindrada total detectada automaticamente pelo nome do arquivo
   - `6` cilindros
+- eficiencia volumetrica corrigida pela pressao do coletor:
+  - usa `P_i_MF_abs = P_i_MF_rel + 1013 mBar`
+  - usa `T_i_MF` como temperatura de referencia
+  - remove o ganho aparente de enchimento causado pelo boost no coletor
+  - sai como `%` no campo `Eta_v_corr_press_pct`
 - potencia dissipada no intercooler:
   - usa `Air_kg_h`
   - usa `T_B_IC - T_i_MF`
@@ -143,6 +149,7 @@ Inclui tambem:
 - `out_FPT/plots/curva_compressor_pratio_vs_vazao_massica_kg_h.png`
 - `out_FPT/plots/curva_compressor_pratio_vs_vazao_volumetrica_m3_s.png`
 - `out_FPT/plots/eficiencia_volumetrica_vs_rpm.png`
+- `out_FPT/plots/eficiencia_volumetrica_corrigida_pressao_vs_rpm.png`
 - `out_FPT/plots/potencia_intercooler_kw_vs_rpm.png`
 - `out_FPT/plots/economia_r_kwh_vs_diesel_rpm.png`
 - `out_FPT/plots/economia_pct_r_kwh_vs_diesel_rpm.png`

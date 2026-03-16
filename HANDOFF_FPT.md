@@ -42,6 +42,7 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - `T_i_MF_C`
 - `T_B_IC_C`
 - `Eta_v` e `Eta_v_pct`
+- `Eta_v_corr_press` e `Eta_v_corr_press_pct`
 - `Q_intercooler_kW`
 - `Custo_R_h`
 - `Custo_R_kWh`
@@ -52,6 +53,7 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - `Diesel_Baseline_Torque_Nm`
 - `Diesel_Baseline_BMEP_bar`
 - `Diesel_Baseline_Eta_v_pct`
+- `Diesel_Baseline_Eta_v_corr_press_pct`
 - `Diesel_Baseline_Q_intercooler_kW`
 - `Economia_vs_Diesel_R_h`
 - `Economia_vs_Diesel_pct`
@@ -62,6 +64,7 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - `Delta_Torque_Nm_vs_Diesel`
 - `Delta_BMEP_bar_vs_Diesel`
 - `Delta_Eta_v_pct_vs_Diesel`
+- `Delta_Eta_v_corr_press_pct_vs_Diesel`
 - `Delta_Q_intercooler_kW_vs_Diesel`
 - cenarios de maquinas:
   - colheitadeira
@@ -93,6 +96,7 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
   - `PRatio_abs` vs vazao massica
   - `PRatio_abs` vs vazao volumetrica
 - eficiencia volumetrica `%` vs RPM
+- eficiencia volumetrica corrigida pela pressao do coletor `%` vs RPM
 - potencia dissipada no intercooler `kW` vs RPM
 - `n_th` vs RPM
 - economia `R$/h` vs RPM
@@ -141,6 +145,7 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - a eficiencia volumetrica usa `1013 mBar` de referencia, `T_i_MF`, `6` cilindros e cilindrada detectada pelo nome do arquivo:
   - `NEF67` e `NEF6` -> `6,7 L`
   - `C13`, `Cursore 13` e `Cursor 13` -> `12,9 L`
+- a eficiencia volumetrica corrigida pela pressao do coletor usa `P_i_MF_abs = P_i_MF_rel + 1013 mBar` e `T_i_MF` para remover o ganho aparente de enchimento causado pelo boost;
 - a potencia dissipada no intercooler usa `Air_kg_h`, `T_B_IC`, `T_i_MF` e `cp_ar = 1,005 kJ/kg.K`;
 - manter `raw_FPT/` fora do Git
 - versionar `out_FPT/` quando os resultados precisarem acompanhar o codigo
