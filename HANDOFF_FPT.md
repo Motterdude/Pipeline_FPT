@@ -29,6 +29,8 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - `Air_kg_h`
 - `Air_kg_h_kW`
 - `P_i_MF_mbar`
+- `Torque_Nm`
+- `BMEP_bar`
 - `T_i_MF_C`
 - `T_B_IC_C`
 - `Eta_v` e `Eta_v_pct`
@@ -39,6 +41,8 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - baseline diesel por `RPM`
 - `Diesel_Baseline_Air_kg_h`
 - `Diesel_Baseline_Air_kg_h_kW`
+- `Diesel_Baseline_Torque_Nm`
+- `Diesel_Baseline_BMEP_bar`
 - `Diesel_Baseline_Eta_v_pct`
 - `Diesel_Baseline_Q_intercooler_kW`
 - `Economia_vs_Diesel_R_h`
@@ -47,6 +51,8 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - `Economia_vs_Diesel_R_kWh_pct`
 - `Delta_Air_kg_h_vs_Diesel`
 - `Delta_Air_kg_h_kW_vs_Diesel`
+- `Delta_Torque_Nm_vs_Diesel`
+- `Delta_BMEP_bar_vs_Diesel`
 - `Delta_Eta_v_pct_vs_Diesel`
 - `Delta_Q_intercooler_kW_vs_Diesel`
 - cenarios de maquinas:
@@ -72,6 +78,8 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - vazao de ar `kg/h` vs RPM
 - vazao de ar especifica `kg/h/kW` vs RPM
 - pressao de coletor `mBar` vs RPM
+- torque `Nm` vs RPM
+- `BMEP` `bar` vs RPM
 - eficiencia volumetrica `%` vs RPM
 - potencia dissipada no intercooler `kW` vs RPM
 - `n_th` vs RPM
@@ -108,6 +116,8 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - o leitor agora reconhece o layout alternativo do arquivo `SWay_P8...D85B15.xlsx`, que nao usa a aba `D` e nao traz os mesmos nomes de coluna do conjunto FPT anterior;
 - a vazao de ar entra automaticamente quando a planilha trouxer `Sensyflow` ou `qm Air`;
 - a pressao de coletor entra automaticamente quando a planilha trouxer `P_i_MF` ou `p i MF`, e o pipeline normaliza a unidade final para `mBar`;
+- o torque entra automaticamente quando a planilha trouxer `M_dyno` ou `M dyno`; se faltar, o pipeline cai para `9550 * Power_kW / RPM`;
+- a `BMEP` e calculada em `bar` pela relacao de 4 tempos com torque e cilindrada detectada;
 - `T_i_MF` e `T_B_IC` entram automaticamente tanto no layout antigo quanto no SWay;
 - a eficiencia volumetrica usa `1013 mBar` de referencia, `T_i_MF`, `6` cilindros e cilindrada detectada pelo nome do arquivo:
   - `NEF67` e `NEF6` -> `6,7 L`

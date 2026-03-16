@@ -16,6 +16,8 @@ Pipeline standalone para comparar um motor Diesel `D85B15` vs Etanol `E94H6` a p
   - vazao de ar
   - vazao de ar por potencia
   - pressao no coletor em `mBar`
+  - torque em `Nm`
+  - `BMEP` em `bar`
   - eficiencia volumetrica
   - potencia dissipada no intercooler
   - custo horario
@@ -101,6 +103,11 @@ Premissas termofluidicas:
   - usa `Air_kg_h`
   - usa `T_B_IC - T_i_MF`
   - usa `cp_ar = 1,005 kJ/kg.K`
+- `BMEP`:
+  - usa `Torque_Nm`
+  - usa a cilindrada total detectada do motor
+  - formula de 4 tempos: `BMEP = 4 * pi * T / Vd`
+  - saida final em `bar`
 
 Filtro de pontos para plot:
 
@@ -123,6 +130,8 @@ Inclui tambem:
 - `out_FPT/plots/vazao_ar_kg_h_vs_rpm.png`
 - `out_FPT/plots/vazao_ar_kg_h_kw_vs_rpm.png`
 - `out_FPT/plots/pressao_coletor_mbar_vs_rpm.png`
+- `out_FPT/plots/torque_nm_vs_rpm.png`
+- `out_FPT/plots/bmep_bar_vs_rpm.png`
 - `out_FPT/plots/eficiencia_volumetrica_vs_rpm.png`
 - `out_FPT/plots/potencia_intercooler_kw_vs_rpm.png`
 - `out_FPT/plots/economia_r_kwh_vs_diesel_rpm.png`
