@@ -24,6 +24,14 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
   - `Delta_Air_kg_h_kW_vs_Diesel`
 - Metrica nova de pressao de coletor:
   - `P_i_MF_mbar`
+- Metricas novas de enchimento e troca termica:
+  - `Eta_v`
+  - `Eta_v_pct`
+  - `Diesel_Baseline_Eta_v_pct`
+  - `Delta_Eta_v_pct_vs_Diesel`
+  - `Q_intercooler_kW`
+  - `Diesel_Baseline_Q_intercooler_kW`
+  - `Delta_Q_intercooler_kW_vs_Diesel`
 - Plots novos:
   - `custo_especifico_r_kwh_vs_rpm.png`
   - `economia_r_kwh_vs_diesel_rpm.png`
@@ -31,6 +39,8 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
   - `vazao_ar_kg_h_vs_rpm.png`
   - `vazao_ar_kg_h_kw_vs_rpm.png`
   - `pressao_coletor_mbar_vs_rpm.png`
+  - `eficiencia_volumetrica_vs_rpm.png`
+  - `potencia_intercooler_kw_vs_rpm.png`
 
 ### Changed
 
@@ -43,6 +53,8 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
 - O leitor passou a detectar automaticamente o layout alternativo do arquivo `SWay_P8...D85B15.xlsx`, com `Planilha1`, cabecalho na segunda linha e aliases de coluna (`qm Fuel`, `P dyno`, `n engine`).
 - O leitor agora tambem detecta vazao de ar tanto como `Sensyflow` quanto como `qm Air`, sem depender de ajuste manual por arquivo.
 - A pressao de coletor `P_i_MF` agora e normalizada para `mBar`, convertendo automaticamente series em `bar`, `kPa` ou `mBar` conforme a magnitude dos dados.
+- A eficiencia volumetrica agora usa `1013 mBar` de referencia, `T_i_MF` como temperatura de referencia e cilindrada total de `12,9 L` com `6` cilindros.
+- A potencia dissipada no intercooler agora usa `Air_kg_h * cp_ar * (T_B_IC - T_i_MF)`, com `cp_ar = 1,005 kJ/kg.K`.
 - O fluxo do FPT agora salva o `lv_kpis_fpt.xlsx` bruto e so depois aplica o filtro manual de pontos para comparativos e plots.
 
 ## 2026-03-12

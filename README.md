@@ -16,6 +16,8 @@ Pipeline standalone para comparar um motor Diesel `D85B15` vs Etanol `E94H6` a p
   - vazao de ar
   - vazao de ar por potencia
   - pressao no coletor em `mBar`
+  - eficiencia volumetrica
+  - potencia dissipada no intercooler
   - custo horario
   - custo especifico em `R$/kWh`
   - `n_th`
@@ -82,7 +84,20 @@ Compatibilidade de leitura:
 - o leitor agora aceita tanto o layout FPT antigo com aba `D` quanto o layout alternativo do arquivo `SWay_P8...`, que vem com `Planilha1`, uma linha numerica antes do cabecalho real e nomes como `qm Fuel`, `P dyno` e `n engine`;
 - a vazao de ar e lida automaticamente como `Sensyflow` no layout antigo e como `qm Air` no layout SWay;
 - a pressao de coletor `P_i_MF` tambem e lida automaticamente, incluindo o alias `p i MF` do SWay, e o pipeline normaliza tudo para `mBar`;
+- a temperatura de coletor `T_i_MF` e a temperatura antes do intercooler `T_B_IC` tambem entram automaticamente, incluindo os aliases do SWay;
 - quando o layout alternativo e detectado, o pipeline ajusta `sheet/header` automaticamente e informa isso no log.
+
+Premissas termofluidicas:
+
+- eficiencia volumetrica:
+  - referencia de pressao fixa em `1013 mBar`
+  - temperatura de referencia do coletor `T_i_MF`
+  - cilindrada total do motor `12,9 L`
+  - `6` cilindros
+- potencia dissipada no intercooler:
+  - usa `Air_kg_h`
+  - usa `T_B_IC - T_i_MF`
+  - usa `cp_ar = 1,005 kJ/kg.K`
 
 Filtro de pontos para plot:
 
@@ -105,6 +120,8 @@ Inclui tambem:
 - `out_FPT/plots/vazao_ar_kg_h_vs_rpm.png`
 - `out_FPT/plots/vazao_ar_kg_h_kw_vs_rpm.png`
 - `out_FPT/plots/pressao_coletor_mbar_vs_rpm.png`
+- `out_FPT/plots/eficiencia_volumetrica_vs_rpm.png`
+- `out_FPT/plots/potencia_intercooler_kw_vs_rpm.png`
 - `out_FPT/plots/economia_r_kwh_vs_diesel_rpm.png`
 - `out_FPT/plots/economia_pct_r_kwh_vs_diesel_rpm.png`
 

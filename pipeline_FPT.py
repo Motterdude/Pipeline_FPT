@@ -29,6 +29,11 @@ RPM_TICK_STEP = 250.0
 LOCAL_STATE_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "pipeline_fpt"
 PAIR_SELECTION_PATH = LOCAL_STATE_DIR / "last_pair_selection.json"
 PLOT_POINT_FILTER_PATH = LOCAL_STATE_DIR / "plot_point_filter_last.json"
+AIR_GAS_CONSTANT_J_KG_K = 287.058
+ETA_V_REF_PRESSURE_MBAR = 1013.0
+ENGINE_DISPLACEMENT_L = 12.9
+ENGINE_CYLINDERS = 6
+AIR_CP_KJ_KG_K = 1.005
 
 FUEL_SPECS = {
     "D85B15": {
@@ -51,6 +56,8 @@ FPT_COLUMN_ALIASES = {
     "speed": ["SPEED", "n engine", "n_engine", "Engine Speed", "Epm_nEng"],
     "air_mass": ["Sensyflow", "qm Air", "qmair", "qm_air", "Air mass", "Air_Mass"],
     "intake_pressure": ["P_i_MF", "p i MF", "p_i_mf"],
+    "intake_temp": ["T_i_MF", "T i MF", "t_i_mf"],
+    "pre_ic_temp": ["T_b_IC", "T b IC", "t_b_ic"],
 }
 
 MACHINE_SCENARIO_SPECS = [
@@ -287,7 +294,7 @@ def load_fpt_measure_dataframe(
     fuel_mass_col: str,
     power_col: str,
     speed_col: str,
-) -> Tuple[pd.DataFrame, str, str, str, Optional[str], Optional[str]]:
+) -> Tuple[pd.DataFrame, str, str, str, Optional[str], Optional[str], Optional[str], Optional[str]]:
     workbook = pd.ExcelFile(path)
     sheet_candidates: List[str] = []
     requested_sheet = str(sheet_name or "").strip()
@@ -319,12 +326,22 @@ def load_fpt_measure_dataframe(
                     intake_pressure_col = resolve_col_with_aliases(df, "intake_pressure", FPT_COLUMN_ALIASES["intake_pressure"])
                 except KeyError:
                     intake_pressure_col = None
+                intake_temp_col = None
+                try:
+                    intake_temp_col = resolve_col_with_aliases(df, "intake_temp", FPT_COLUMN_ALIASES["intake_temp"])
+                except KeyError:
+                    intake_temp_col = None
+                pre_ic_temp_col = None
+                try:
+                    pre_ic_temp_col = resolve_col_with_aliases(df, "pre_ic_temp", FPT_COLUMN_ALIASES["pre_ic_temp"])
+                except KeyError:
+                    pre_ic_temp_col = None
                 if candidate_sheet != requested_sheet or header_row != 0:
                     print(
                         f"[INFO] {path.name}: usei sheet='{candidate_sheet}' header={header_row} "
                         f"para compatibilizar o layout do arquivo."
                     )
-                return df, fb_col, p_col, rpm_col, air_col, intake_pressure_col
+                return df, fb_col, p_col, rpm_col, air_col, intake_pressure_col, intake_temp_col, pre_ic_temp_col
             except KeyError as exc:
                 errors.append(f"{candidate_sheet}/header={header_row}: {exc}")
                 continue
@@ -688,7 +705,7 @@ def read_fpt_xlsx(
         print(f"[INFO] Pulei {path.name}: combustivel nao reconhecido no nome.")
         return pd.DataFrame()
 
-    df, fb_col, p_col, rpm_col, air_col, intake_pressure_col = load_fpt_measure_dataframe(
+    df, fb_col, p_col, rpm_col, air_col, intake_pressure_col, intake_temp_col, pre_ic_temp_col = load_fpt_measure_dataframe(
         path,
         sheet_name=sheet_name,
         fuel_mass_col=fuel_mass_col,
@@ -697,6 +714,8 @@ def read_fpt_xlsx(
     )
 
     pressure_series = _pressure_series_to_mbar(df[intake_pressure_col]) if intake_pressure_col else pd.Series(pd.NA, index=df.index)
+    intake_temp_series = pd.to_numeric(df[intake_temp_col], errors="coerce") if intake_temp_col else pd.Series(pd.NA, index=df.index)
+    pre_ic_temp_series = pd.to_numeric(df[pre_ic_temp_col], errors="coerce") if pre_ic_temp_col else pd.Series(pd.NA, index=df.index)
     out = pd.DataFrame(
         {
             "Pair_ID": pair_id,
@@ -708,6 +727,8 @@ def read_fpt_xlsx(
             "Speed_RPM_raw": pd.to_numeric(df[rpm_col], errors="coerce"),
             "Air_kg_h": pd.to_numeric(df[air_col], errors="coerce") if air_col else pd.NA,
             "P_i_MF_mbar": pressure_series,
+            "T_i_MF_C": intake_temp_series,
+            "T_B_IC_C": pre_ic_temp_series,
         }
     )
     out = out.dropna(subset=["Consumo_kg_h", "Power_kW", "Speed_RPM_raw"]).copy()
@@ -728,10 +749,14 @@ def aggregate_curve_rows(df: pd.DataFrame) -> pd.DataFrame:
             Consumo_kg_h=("Consumo_kg_h", "mean"),
             Air_kg_h=("Air_kg_h", "mean"),
             P_i_MF_mbar=("P_i_MF_mbar", "mean"),
+            T_i_MF_C=("T_i_MF_C", "mean"),
+            T_B_IC_C=("T_B_IC_C", "mean"),
             Power_kW_sd=("Power_kW", "std"),
             Consumo_kg_h_sd=("Consumo_kg_h", "std"),
             Air_kg_h_sd=("Air_kg_h", "std"),
             P_i_MF_mbar_sd=("P_i_MF_mbar", "std"),
+            T_i_MF_C_sd=("T_i_MF_C", "std"),
+            T_B_IC_C_sd=("T_B_IC_C", "std"),
             N_points=("Power_kW", "count"),
             Source_Files=("Source_File", lambda s: "; ".join(sorted(set(str(v) for v in s if str(v).strip())))),
         )
@@ -768,12 +793,31 @@ def compute_base_metrics(df: pd.DataFrame) -> pd.DataFrame:
     consumo_kg_h = pd.to_numeric(out["Consumo_kg_h"], errors="coerce")
     air_kg_h = pd.to_numeric(out.get("Air_kg_h", pd.NA), errors="coerce")
     power_kw = pd.to_numeric(out["Power_kW"], errors="coerce")
+    speed_rpm = pd.to_numeric(out.get("Speed_RPM", out.get("RPM", pd.NA)), errors="coerce")
+    intake_temp_c = pd.to_numeric(out.get("T_i_MF_C", pd.NA), errors="coerce")
+    pre_ic_temp_c = pd.to_numeric(out.get("T_B_IC_C", pd.NA), errors="coerce")
 
     out["Consumo_L_h"] = (consumo_kg_h * 1000.0 / fuel_density).where(fuel_density.gt(0), pd.NA)
     out["Custo_R_h"] = (pd.to_numeric(out["Consumo_L_h"], errors="coerce") * fuel_cost).where(fuel_cost.gt(0), pd.NA)
     custo_r_h = pd.to_numeric(out["Custo_R_h"], errors="coerce")
     out["Custo_R_kWh"] = (custo_r_h / power_kw).where(power_kw.gt(0), pd.NA)
     out["Air_kg_h_kW"] = (air_kg_h / power_kw).where(power_kw.gt(0), pd.NA)
+    intake_temp_k = intake_temp_c + 273.15
+    rho_ref = ((ETA_V_REF_PRESSURE_MBAR * 100.0) / (AIR_GAS_CONSTANT_J_KG_K * intake_temp_k)).where(intake_temp_k.gt(0), pd.NA)
+    air_mdot = air_kg_h / 3600.0
+    engine_disp_total_m3 = ENGINE_DISPLACEMENT_L / 1000.0
+    engine_disp_per_cyl_m3 = engine_disp_total_m3 / ENGINE_CYLINDERS if ENGINE_CYLINDERS > 0 else float("nan")
+    theoretical_volume_flow_m3_s = (engine_disp_per_cyl_m3 * ENGINE_CYLINDERS * speed_rpm / 2.0 / 60.0).where(speed_rpm.gt(0), pd.NA)
+    out["Eta_v"] = (air_mdot / (rho_ref * theoretical_volume_flow_m3_s)).where(
+        (air_mdot > 0) & rho_ref.gt(0) & theoretical_volume_flow_m3_s.gt(0),
+        pd.NA,
+    )
+    out["Eta_v_pct"] = pd.to_numeric(out["Eta_v"], errors="coerce") * 100.0
+    delta_t_ic = pre_ic_temp_c - intake_temp_c
+    out["Q_intercooler_kW"] = (air_mdot * AIR_CP_KJ_KG_K * delta_t_ic).where(
+        (air_mdot > 0) & delta_t_ic.notna(),
+        pd.NA,
+    )
     mdot = consumo_kg_h / 3600.0
     out["n_th"] = (power_kw / (mdot * lhv)).where((power_kw > 0) & (mdot > 0) & (lhv > 0), pd.NA)
     out["n_th_pct"] = pd.to_numeric(out["n_th"], errors="coerce") * 100.0
@@ -796,6 +840,8 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
         "Custo_R_kWh",
         "Air_kg_h",
         "Air_kg_h_kW",
+        "Eta_v_pct",
+        "Q_intercooler_kW",
         "n_th_pct",
         "Power_kW",
     ]
@@ -807,6 +853,8 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
             "Custo_R_kWh": "Diesel_Baseline_Custo_R_kWh",
             "Air_kg_h": "Diesel_Baseline_Air_kg_h",
             "Air_kg_h_kW": "Diesel_Baseline_Air_kg_h_kW",
+            "Eta_v_pct": "Diesel_Baseline_Eta_v_pct",
+            "Q_intercooler_kW": "Diesel_Baseline_Q_intercooler_kW",
             "n_th_pct": "Diesel_Baseline_n_th_pct",
             "Power_kW": "Diesel_Baseline_Power_kW",
         }
@@ -826,6 +874,10 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
     air_m_bl = pd.to_numeric(out.get("Diesel_Baseline_Air_kg_h", pd.NA), errors="coerce")
     air_sp = pd.to_numeric(out.get("Air_kg_h_kW", pd.NA), errors="coerce")
     air_sp_bl = pd.to_numeric(out.get("Diesel_Baseline_Air_kg_h_kW", pd.NA), errors="coerce")
+    eta_v = pd.to_numeric(out.get("Eta_v_pct", pd.NA), errors="coerce")
+    eta_v_bl = pd.to_numeric(out.get("Diesel_Baseline_Eta_v_pct", pd.NA), errors="coerce")
+    q_ic = pd.to_numeric(out.get("Q_intercooler_kW", pd.NA), errors="coerce")
+    q_ic_bl = pd.to_numeric(out.get("Diesel_Baseline_Q_intercooler_kW", pd.NA), errors="coerce")
     nth = pd.to_numeric(out["n_th_pct"], errors="coerce")
     nth_bl = pd.to_numeric(out["Diesel_Baseline_n_th_pct"], errors="coerce")
 
@@ -837,6 +889,8 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
     out["Delta_Consumo_L_h_vs_Diesel"] = cons_v - cons_v_bl
     out["Delta_Air_kg_h_vs_Diesel"] = air_m - air_m_bl
     out["Delta_Air_kg_h_kW_vs_Diesel"] = air_sp - air_sp_bl
+    out["Delta_Eta_v_pct_vs_Diesel"] = eta_v - eta_v_bl
+    out["Delta_Q_intercooler_kW_vs_Diesel"] = q_ic - q_ic_bl
     out["Delta_n_th_pct_vs_Diesel"] = nth - nth_bl
 
     diesel_mask = out["Fuel_Label"].eq("D85B15")
@@ -849,6 +903,8 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
         "Delta_Consumo_L_h_vs_Diesel",
         "Delta_Air_kg_h_vs_Diesel",
         "Delta_Air_kg_h_kW_vs_Diesel",
+        "Delta_Eta_v_pct_vs_Diesel",
+        "Delta_Q_intercooler_kW_vs_Diesel",
         "Delta_n_th_pct_vs_Diesel",
     ]
     for col in zero_cols:
@@ -946,6 +1002,8 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
             "Air_kg_h": "Diesel_Air_kg_h",
             "Air_kg_h_kW": "Diesel_Air_kg_h_kW",
             "P_i_MF_mbar": "Diesel_P_i_MF_mbar",
+            "Eta_v_pct": "Diesel_Eta_v_pct",
+            "Q_intercooler_kW": "Diesel_Q_intercooler_kW",
             "n_th_pct": "Diesel_n_th_pct",
         }
     )
@@ -960,6 +1018,8 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
             "Air_kg_h": "E94H6_Air_kg_h",
             "Air_kg_h_kW": "E94H6_Air_kg_h_kW",
             "P_i_MF_mbar": "E94H6_P_i_MF_mbar",
+            "Eta_v_pct": "E94H6_Eta_v_pct",
+            "Q_intercooler_kW": "E94H6_Q_intercooler_kW",
             "n_th_pct": "E94H6_n_th_pct",
         }
     )
@@ -977,6 +1037,8 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
         "Diesel_Air_kg_h",
         "Diesel_Air_kg_h_kW",
         "Diesel_P_i_MF_mbar",
+        "Diesel_Eta_v_pct",
+        "Diesel_Q_intercooler_kW",
         "Diesel_n_th_pct",
     ]
     cols_right = [
@@ -991,6 +1053,8 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
         "E94H6_Air_kg_h",
         "E94H6_Air_kg_h_kW",
         "E94H6_P_i_MF_mbar",
+        "E94H6_Eta_v_pct",
+        "E94H6_Q_intercooler_kW",
         "E94H6_n_th_pct",
         "Economia_vs_Diesel_R_h",
         "Economia_vs_Diesel_pct",
@@ -1601,6 +1665,22 @@ def make_plots(df: pd.DataFrame, plot_dir: Path) -> None:
         title="Intake manifold pressure vs RPM",
         filename="pressao_coletor_mbar_vs_rpm.png",
         y_label="Intake manifold pressure (mBar)",
+        plot_dir=plot_dir,
+    )
+    plot_dual_fuel_metric(
+        df,
+        y_col="Eta_v_pct",
+        title="Volumetric efficiency vs RPM",
+        filename="eficiencia_volumetrica_vs_rpm.png",
+        y_label="Volumetric efficiency (%)",
+        plot_dir=plot_dir,
+    )
+    plot_dual_fuel_metric(
+        df,
+        y_col="Q_intercooler_kW",
+        title="Intercooler dissipated power vs RPM",
+        filename="potencia_intercooler_kw_vs_rpm.png",
+        y_label="Intercooler dissipated power (kW)",
         plot_dir=plot_dir,
     )
     plot_dual_fuel_metric(

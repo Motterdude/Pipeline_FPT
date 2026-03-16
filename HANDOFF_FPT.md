@@ -29,18 +29,26 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - `Air_kg_h`
 - `Air_kg_h_kW`
 - `P_i_MF_mbar`
+- `T_i_MF_C`
+- `T_B_IC_C`
+- `Eta_v` e `Eta_v_pct`
+- `Q_intercooler_kW`
 - `Custo_R_h`
 - `Custo_R_kWh`
 - `n_th` e `n_th_pct`
 - baseline diesel por `RPM`
 - `Diesel_Baseline_Air_kg_h`
 - `Diesel_Baseline_Air_kg_h_kW`
+- `Diesel_Baseline_Eta_v_pct`
+- `Diesel_Baseline_Q_intercooler_kW`
 - `Economia_vs_Diesel_R_h`
 - `Economia_vs_Diesel_pct`
 - `Economia_vs_Diesel_R_kWh`
 - `Economia_vs_Diesel_R_kWh_pct`
 - `Delta_Air_kg_h_vs_Diesel`
 - `Delta_Air_kg_h_kW_vs_Diesel`
+- `Delta_Eta_v_pct_vs_Diesel`
+- `Delta_Q_intercooler_kW_vs_Diesel`
 - cenarios de maquinas:
   - colheitadeira
   - trator transbordo
@@ -64,6 +72,8 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - vazao de ar `kg/h` vs RPM
 - vazao de ar especifica `kg/h/kW` vs RPM
 - pressao de coletor `mBar` vs RPM
+- eficiencia volumetrica `%` vs RPM
+- potencia dissipada no intercooler `kW` vs RPM
 - `n_th` vs RPM
 - economia `R$/h` vs RPM
 - economia `%` vs RPM
@@ -98,6 +108,9 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - o leitor agora reconhece o layout alternativo do arquivo `SWay_P8...D85B15.xlsx`, que nao usa a aba `D` e nao traz os mesmos nomes de coluna do conjunto FPT anterior;
 - a vazao de ar entra automaticamente quando a planilha trouxer `Sensyflow` ou `qm Air`;
 - a pressao de coletor entra automaticamente quando a planilha trouxer `P_i_MF` ou `p i MF`, e o pipeline normaliza a unidade final para `mBar`;
+- `T_i_MF` e `T_B_IC` entram automaticamente tanto no layout antigo quanto no SWay;
+- a eficiencia volumetrica usa `1013 mBar` de referencia, `T_i_MF`, cilindrada total `12,9 L` e `6` cilindros;
+- a potencia dissipada no intercooler usa `Air_kg_h`, `T_B_IC`, `T_i_MF` e `cp_ar = 1,005 kJ/kg.K`;
 - manter `raw_FPT/` fora do Git
 - versionar `out_FPT/` quando os resultados precisarem acompanhar o codigo
 - `xlsx` e `png` sao marcados como binarios em `.gitattributes`
