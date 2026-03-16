@@ -39,6 +39,8 @@ Se estiver usando o mesmo ambiente do projeto anterior:
 C:\Users\SC61730\Downloads\Processamento_mestrado_28\Processamentos\.venv\Scripts\python.exe .\pipeline_FPT.py
 ```
 
+Ao iniciar, o pipeline agora abre uma GUI para ler `raw_FPT/` e deixar voce montar explicitamente os pares Diesel vs Etanol que devem entrar no comparativo da rodada.
+
 ## Configuracao
 
 Edite `config_pipeline_fpt.xlsx`, aba `Defaults`.
@@ -52,13 +54,24 @@ Parametros principais:
 - `FUEL_MASS_COL`
 - `POWER_COL`
 - `SPEED_COL`
+- `PAIR_SELECTION_MODE`:
+  - `gui` = abre a GUI de pares e deixa escolher manualmente
+  - `auto` = tenta parear diesel e etanol automaticamente pela ordem dos arquivos filtrados
 - densidades, custos e `LHV`
 - cenarios de maquinas (`horas/ano` e `diesel L/h`)
+
+Observacoes da selecao de pares:
+
+- a GUI mostra os arquivos Diesel e Etanol encontrados em `raw_FPT/`;
+- cada comparativo passa a ser feito por `Pair_ID`, sem misturar motores diferentes no mesmo baseline;
+- a ultima selecao fica salva localmente em `%LOCALAPPDATA%\pipeline_fpt\last_pair_selection.json`;
+- se mais de um par for escolhido, os plots saem em subpastas dentro de `out_FPT/plots/`.
 
 ## Saidas
 
 - `out_FPT/lv_kpis_fpt.xlsx`
 - `out_FPT/compare_rpm_diesel_vs_e94h6_fpt.xlsx`
+- `out_FPT/compare_<pair_id>.xlsx` quando houver mais de um par selecionado
 - graficos em `out_FPT/plots`
 
 Inclui tambem:

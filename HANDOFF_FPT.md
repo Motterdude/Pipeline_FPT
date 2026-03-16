@@ -35,11 +35,14 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
   - colheitadeira
   - trator transbordo
   - caminhao
+- `Pair_ID`
+- `Pair_Label`
 
 ## Arquivos de saida principais
 
 - `out_FPT/lv_kpis_fpt.xlsx`
 - `out_FPT/compare_rpm_diesel_vs_e94h6_fpt.xlsx`
+- `out_FPT/compare_<pair_id>.xlsx` quando houver mais de um par
 
 ## Plots principais
 
@@ -63,7 +66,11 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 
 ## Manutencao
 
-- ajustar `FILE_INCLUDE_REGEX` no config para trocar o par Diesel/E94H6
+- o pipeline agora abre uma GUI para selecionar quais pares Diesel/E94H6 devem entrar na rodada;
+- se quiser bypass da GUI, usar `PAIR_SELECTION_MODE=auto` na aba `Defaults`;
+- a ultima selecao de pares fica salva localmente em `%LOCALAPPDATA%\pipeline_fpt\last_pair_selection.json`;
+- o baseline diesel e o merge de comparacao agora acontecem por `Pair_ID`, nao mais por combustivel puro no conjunto inteiro;
+- ajustar `FILE_INCLUDE_REGEX` no config continua sendo util para reduzir a lista de arquivos mostrada na GUI;
 - manter `raw_FPT/` fora do Git
 - versionar `out_FPT/` quando os resultados precisarem acompanhar o codigo
 - `xlsx` e `png` sao marcados como binarios em `.gitattributes`

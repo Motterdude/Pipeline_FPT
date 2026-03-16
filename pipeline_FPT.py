@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -9,12 +12,22 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import FuncFormatter
 
+try:
+    import tkinter as tk
+    from tkinter import messagebox, ttk
+except Exception:
+    tk = None
+    messagebox = None
+    ttk = None
+
 
 ROOT_DIR = Path(__file__).resolve().parent
 DEFAULT_RAW_DIR = ROOT_DIR / "raw_FPT"
 DEFAULT_OUT_DIR = ROOT_DIR / "out_FPT"
 DEFAULT_CONFIG_PATH = ROOT_DIR / "config_pipeline_fpt.xlsx"
 RPM_TICK_STEP = 250.0
+LOCAL_STATE_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "pipeline_fpt"
+PAIR_SELECTION_PATH = LOCAL_STATE_DIR / "last_pair_selection.json"
 
 FUEL_SPECS = {
     "D85B15": {
@@ -56,8 +69,31 @@ MACHINE_SCENARIO_SPECS = [
 ]
 
 
+@dataclass(frozen=True)
+class FptComparePair:
+    pair_id: str
+    pair_label: str
+    diesel_path: Path
+    ethanol_path: Path
+
+
 def norm_key(value: object) -> str:
     return str(value or "").strip().lower()
+
+
+def slugify_token(value: object) -> str:
+    text = re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower())
+    return text.strip("_") or "item"
+
+
+def make_pair_id(diesel_path: Path, ethanol_path: Path) -> str:
+    diesel_token = slugify_token(diesel_path.stem)
+    ethanol_token = slugify_token(ethanol_path.stem)
+    return f"{diesel_token}__vs__{ethanol_token}"
+
+
+def make_pair_label(diesel_path: Path, ethanol_path: Path) -> str:
+    return f"{diesel_path.stem} vs {ethanol_path.stem}"
 
 
 def _to_float(value: object, default: float = float("nan")) -> float:
@@ -73,6 +109,39 @@ def _to_float(value: object, default: float = float("nan")) -> float:
         return float(text)
     except Exception:
         return default
+
+
+def load_last_pair_selection() -> List[Tuple[str, str]]:
+    try:
+        if not PAIR_SELECTION_PATH.exists():
+            return []
+        payload = json.loads(PAIR_SELECTION_PATH.read_text(encoding="utf-8"))
+        raw_pairs = payload.get("pairs", [])
+        out: List[Tuple[str, str]] = []
+        for item in raw_pairs:
+            diesel_raw = str(item.get("diesel_path", "")).strip()
+            ethanol_raw = str(item.get("ethanol_path", "")).strip()
+            if diesel_raw and ethanol_raw:
+                out.append((diesel_raw, ethanol_raw))
+        return out
+    except Exception:
+        return []
+
+
+def save_last_pair_selection(pairs: List[FptComparePair]) -> None:
+    LOCAL_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "pairs": [
+            {
+                "pair_id": pair.pair_id,
+                "pair_label": pair.pair_label,
+                "diesel_path": str(pair.diesel_path),
+                "ethanol_path": str(pair.ethanol_path),
+            }
+            for pair in pairs
+        ]
+    }
+    PAIR_SELECTION_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
 
 
 def safe_to_excel(df: pd.DataFrame, path: Path) -> Path:
@@ -126,11 +195,207 @@ def load_defaults_config(path: Path) -> Dict[str, str]:
 
 
 def discover_input_files(raw_dir: Path, include_regex: str) -> List[Path]:
-    files = sorted(p for p in raw_dir.glob("*.xlsx") if p.is_file() and not p.name.startswith("~$"))
+    files = sorted(p for p in raw_dir.rglob("*.xlsx") if p.is_file() and not p.name.startswith("~$"))
     if not include_regex:
         return files
     pattern = re.compile(include_regex)
     return [p for p in files if pattern.search(p.name)]
+
+
+def build_selected_pairs_from_paths(raw_pairs: List[Tuple[Path, Path]]) -> List[FptComparePair]:
+    out: List[FptComparePair] = []
+    seen_ids: Dict[str, int] = {}
+    for diesel_path, ethanol_path in raw_pairs:
+        base_id = make_pair_id(diesel_path, ethanol_path)
+        n = seen_ids.get(base_id, 0) + 1
+        seen_ids[base_id] = n
+        pair_id = base_id if n == 1 else f"{base_id}_{n:02d}"
+        out.append(
+            FptComparePair(
+                pair_id=pair_id,
+                pair_label=make_pair_label(diesel_path, ethanol_path),
+                diesel_path=diesel_path,
+                ethanol_path=ethanol_path,
+            )
+        )
+    return out
+
+
+def _default_pair_candidates(files: List[Path]) -> List[Tuple[Path, Path]]:
+    diesel_files = [p for p in files if parse_fuel_label(p) == "D85B15"]
+    ethanol_files = [p for p in files if parse_fuel_label(p) == "E94H6"]
+    raw_pairs = load_last_pair_selection()
+    if raw_pairs:
+        path_map = {str(p.resolve()): p for p in files}
+        restored_pairs: List[Tuple[Path, Path]] = []
+        for diesel_raw, ethanol_raw in raw_pairs:
+            diesel_path = path_map.get(str(Path(diesel_raw).resolve()))
+            ethanol_path = path_map.get(str(Path(ethanol_raw).resolve()))
+            if diesel_path is not None and ethanol_path is not None:
+                restored_pairs.append((diesel_path, ethanol_path))
+        if restored_pairs:
+            return restored_pairs
+
+    if len(diesel_files) == 1 and len(ethanol_files) == 1:
+        return [(diesel_files[0], ethanol_files[0])]
+    return []
+
+
+def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePair]:
+    if tk is None or ttk is None or messagebox is None:
+        raise RuntimeError("Tkinter nao esta disponivel neste Python.")
+
+    diesel_files = [p for p in files if parse_fuel_label(p) == "D85B15"]
+    ethanol_files = [p for p in files if parse_fuel_label(p) == "E94H6"]
+    if not diesel_files or not ethanol_files:
+        raise RuntimeError("Preciso de pelo menos um arquivo diesel e um arquivo etanol para montar pares.")
+
+    selected_pairs: List[Tuple[Path, Path]] = list(_default_pair_candidates(files))
+    result: Dict[str, List[FptComparePair] | bool] = {"pairs": [], "ok": False}
+
+    def rel_name(path: Path) -> str:
+        try:
+            return str(path.relative_to(raw_dir))
+        except Exception:
+            return path.name
+
+    root = tk.Tk()
+    root.title("Selecao de pares FPT")
+    root.geometry("1200x720")
+    root.minsize(1080, 640)
+
+    header = ttk.Label(
+        root,
+        text="Selecione os pares diesel vs etanol que devem entrar no comparativo desta rodada.",
+        font=("Segoe UI", 11, "bold"),
+    )
+    header.pack(fill="x", padx=12, pady=(12, 6))
+
+    info = ttk.Label(
+        root,
+        text=f"RAW: {raw_dir}",
+        wraplength=1120,
+        justify="left",
+    )
+    info.pack(fill="x", padx=12, pady=(0, 10))
+
+    body = ttk.Frame(root)
+    body.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+    body.columnconfigure(0, weight=1)
+    body.columnconfigure(1, weight=1)
+    body.columnconfigure(2, weight=2)
+    body.rowconfigure(1, weight=1)
+
+    ttk.Label(body, text="Diesel").grid(row=0, column=0, sticky="w", padx=(0, 6))
+    ttk.Label(body, text="Etanol").grid(row=0, column=1, sticky="w", padx=(6, 6))
+    ttk.Label(body, text="Pares selecionados").grid(row=0, column=2, sticky="w", padx=(6, 0))
+
+    diesel_list = tk.Listbox(body, exportselection=False)
+    ethanol_list = tk.Listbox(body, exportselection=False)
+    pair_list = ttk.Treeview(body, columns=("diesel", "ethanol"), show="headings", selectmode="browse")
+    pair_list.heading("diesel", text="Diesel")
+    pair_list.heading("ethanol", text="Etanol")
+    pair_list.column("diesel", width=300, anchor="w")
+    pair_list.column("ethanol", width=360, anchor="w")
+
+    diesel_list.grid(row=1, column=0, sticky="nsew", padx=(0, 6))
+    ethanol_list.grid(row=1, column=1, sticky="nsew", padx=(6, 6))
+    pair_list.grid(row=1, column=2, sticky="nsew", padx=(6, 0))
+
+    for path in diesel_files:
+        diesel_list.insert("end", rel_name(path))
+    for path in ethanol_files:
+        ethanol_list.insert("end", rel_name(path))
+
+    path_lookup = {rel_name(path): path for path in files}
+
+    def refresh_pairs() -> None:
+        for item_id in pair_list.get_children():
+            pair_list.delete(item_id)
+        for idx, (diesel_path, ethanol_path) in enumerate(selected_pairs, start=1):
+            pair_list.insert("", "end", iid=f"pair_{idx}", values=(rel_name(diesel_path), rel_name(ethanol_path)))
+
+    def add_pair() -> None:
+        diesel_idx = diesel_list.curselection()
+        ethanol_idx = ethanol_list.curselection()
+        if not diesel_idx or not ethanol_idx:
+            messagebox.showwarning("Par incompleto", "Selecione um arquivo diesel e um arquivo etanol.")
+            return
+        diesel_path = diesel_files[int(diesel_idx[0])]
+        ethanol_path = ethanol_files[int(ethanol_idx[0])]
+        candidate = (diesel_path, ethanol_path)
+        if candidate in selected_pairs:
+            messagebox.showinfo("Par ja existe", "Esse par ja esta na lista.")
+            return
+        selected_pairs.append(candidate)
+        refresh_pairs()
+
+    def remove_pair() -> None:
+        selected = pair_list.selection()
+        if not selected:
+            return
+        item = pair_list.item(selected[0])
+        diesel_raw, ethanol_raw = item.get("values", ["", ""])
+        diesel_path = path_lookup.get(str(diesel_raw))
+        ethanol_path = path_lookup.get(str(ethanol_raw))
+        if diesel_path is None or ethanol_path is None:
+            return
+        selected_pairs[:] = [pair for pair in selected_pairs if pair != (diesel_path, ethanol_path)]
+        refresh_pairs()
+
+    def accept() -> None:
+        if not selected_pairs:
+            messagebox.showwarning("Sem pares", "Adicione pelo menos um par para continuar.")
+            return
+        pairs = build_selected_pairs_from_paths(selected_pairs)
+        result["pairs"] = pairs
+        result["ok"] = True
+        save_last_pair_selection(pairs)
+        root.destroy()
+
+    def cancel() -> None:
+        result["ok"] = False
+        root.destroy()
+
+    action_bar = ttk.Frame(root)
+    action_bar.pack(fill="x", padx=12, pady=(0, 12))
+
+    ttk.Button(action_bar, text="Adicionar par", command=add_pair).pack(side="left")
+    ttk.Button(action_bar, text="Remover par", command=remove_pair).pack(side="left", padx=(8, 0))
+    ttk.Button(action_bar, text="Cancelar", command=cancel).pack(side="right")
+    ttk.Button(action_bar, text="Rodar com estes pares", command=accept).pack(side="right", padx=(0, 8))
+
+    refresh_pairs()
+    root.protocol("WM_DELETE_WINDOW", cancel)
+    root.state("zoomed")
+    root.mainloop()
+
+    if not bool(result["ok"]):
+        raise SystemExit("Execucao cancelada pelo usuario na selecao de pares.")
+
+    pairs = result.get("pairs", [])
+    return list(pairs) if isinstance(pairs, list) else []
+
+
+def resolve_selected_pairs(
+    *,
+    raw_dir: Path,
+    files: List[Path],
+    pair_selection_mode: str,
+) -> List[FptComparePair]:
+    mode = norm_key(pair_selection_mode) or "gui"
+    if mode in {"gui", "pair_gui", "pairs_gui"}:
+        if tk is not None and ttk is not None and messagebox is not None:
+            return select_pairs_via_gui(raw_dir, files)
+        print("[WARN] Tkinter nao esta disponivel; caindo para pareamento automatico.")
+        mode = "auto"
+
+    diesel_files = [p for p in files if parse_fuel_label(p) == "D85B15"]
+    ethanol_files = [p for p in files if parse_fuel_label(p) == "E94H6"]
+    auto_pairs = list(zip(diesel_files, ethanol_files))
+    if not auto_pairs:
+        raise SystemExit("Nao consegui montar pares automaticamente a partir dos arquivos encontrados.")
+    return build_selected_pairs_from_paths(auto_pairs)
 
 
 def parse_fuel_label(path: Path) -> Optional[str]:
@@ -145,6 +410,8 @@ def parse_fuel_label(path: Path) -> Optional[str]:
 def read_fpt_xlsx(
     path: Path,
     *,
+    pair_id: str,
+    pair_label: str,
     sheet_name: str,
     fuel_mass_col: str,
     power_col: str,
@@ -163,6 +430,8 @@ def read_fpt_xlsx(
 
     out = pd.DataFrame(
         {
+            "Pair_ID": pair_id,
+            "Pair_Label": pair_label,
             "Source_File": path.name,
             "Fuel_Label": fuel_label,
             "Consumo_kg_h": pd.to_numeric(df[fb_col], errors="coerce"),
@@ -181,7 +450,7 @@ def aggregate_curve_rows(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
 
     g = (
-        df.groupby(["Fuel_Label", "RPM"], dropna=False, sort=True)
+        df.groupby(["Pair_ID", "Pair_Label", "Fuel_Label", "RPM"], dropna=False, sort=True)
         .agg(
             Speed_RPM=("Speed_RPM_raw", "mean"),
             Power_kW=("Power_kW", "mean"),
@@ -239,7 +508,7 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
         print("[WARN] Nao encontrei pontos D85B15 para baseline.")
         return out
 
-    baseline_cols = ["RPM", "Consumo_kg_h", "Consumo_L_h", "Custo_R_h", "n_th_pct", "Power_kW"]
+    baseline_cols = ["Pair_ID", "RPM", "Consumo_kg_h", "Consumo_L_h", "Custo_R_h", "n_th_pct", "Power_kW"]
     diesel = diesel[baseline_cols].rename(
         columns={
             "Consumo_kg_h": "Diesel_Baseline_Consumo_kg_h",
@@ -250,7 +519,7 @@ def attach_diesel_baseline(df: pd.DataFrame) -> pd.DataFrame:
         }
     )
 
-    out = out.merge(diesel, on="RPM", how="left")
+    out = out.merge(diesel, on=["Pair_ID", "RPM"], how="left")
 
     custo = pd.to_numeric(out["Custo_R_h"], errors="coerce")
     custo_bl = pd.to_numeric(out["Diesel_Baseline_Custo_R_h"], errors="coerce")
@@ -380,10 +649,31 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
         }
     )
 
-    cols_left = ["RPM", "Diesel_Speed_RPM", "Diesel_Power_kW", "Diesel_Consumo_kg_h", "Diesel_Consumo_L_h", "Diesel_Custo_R_h", "Diesel_n_th_pct"]
-    cols_right = ["RPM", "E94H6_Speed_RPM", "E94H6_Power_kW", "E94H6_Consumo_kg_h", "E94H6_Consumo_L_h", "E94H6_Custo_R_h", "E94H6_n_th_pct", "Economia_vs_Diesel_R_h", "Economia_vs_Diesel_pct"]
-    merged = diesel[cols_left].merge(ethanol[cols_right], on="RPM", how="inner")
-    return merged.sort_values("RPM").copy()
+    cols_left = [
+        "Pair_ID",
+        "Pair_Label",
+        "RPM",
+        "Diesel_Speed_RPM",
+        "Diesel_Power_kW",
+        "Diesel_Consumo_kg_h",
+        "Diesel_Consumo_L_h",
+        "Diesel_Custo_R_h",
+        "Diesel_n_th_pct",
+    ]
+    cols_right = [
+        "Pair_ID",
+        "RPM",
+        "E94H6_Speed_RPM",
+        "E94H6_Power_kW",
+        "E94H6_Consumo_kg_h",
+        "E94H6_Consumo_L_h",
+        "E94H6_Custo_R_h",
+        "E94H6_n_th_pct",
+        "Economia_vs_Diesel_R_h",
+        "Economia_vs_Diesel_pct",
+    ]
+    merged = diesel[cols_left].merge(ethanol[cols_right], on=["Pair_ID", "RPM"], how="inner")
+    return merged.sort_values(["Pair_ID", "RPM"]).copy()
 
 
 def _scaled_tick_formatter(divisor: float) -> FuncFormatter:
@@ -731,33 +1021,55 @@ def main() -> None:
     power_col = defaults_cfg.get(norm_key("POWER_COL"), "P_dyno") or "P_dyno"
     speed_col = defaults_cfg.get(norm_key("SPEED_COL"), "SPEED") or "SPEED"
     rpm_round_digits = int(_to_float(defaults_cfg.get(norm_key("RPM_ROUND_DIGITS"), "0"), default=0.0))
+    pair_selection_mode = defaults_cfg.get(norm_key("PAIR_SELECTION_MODE"), "gui") or "gui"
 
     files = discover_input_files(raw_dir, include_regex)
     if not files:
         raise SystemExit(f"Nenhum .xlsx selecionado em {raw_dir} com regex '{include_regex}'.")
 
+    selected_pairs = resolve_selected_pairs(raw_dir=raw_dir, files=files, pair_selection_mode=pair_selection_mode)
+    selected_paths: List[Path] = []
+    for pair in selected_pairs:
+        selected_paths.extend([pair.diesel_path, pair.ethanol_path])
+
+    unique_selected_files: List[Path] = []
+    seen_paths: set[Path] = set()
+    for path in selected_paths:
+        resolved = path.resolve()
+        if resolved in seen_paths:
+            continue
+        seen_paths.add(resolved)
+        unique_selected_files.append(path)
+
     print(f"[INFO] Config: {config_path}")
     print(f"[INFO] RAW: {raw_dir}")
     print(f"[INFO] OUT: {out_dir}")
-    print(f"[INFO] Arquivos selecionados: {len(files)}")
-    for path in files:
+    print(f"[INFO] Modo de selecao de pares: {pair_selection_mode}")
+    print(f"[INFO] Pares selecionados: {len(selected_pairs)}")
+    for pair in selected_pairs:
+        print(f"[INFO]   - {pair.pair_label}")
+    print(f"[INFO] Arquivos usados: {len(unique_selected_files)}")
+    for path in unique_selected_files:
         print(f"[INFO]   - {path.name}")
 
     all_rows: List[pd.DataFrame] = []
-    for path in files:
-        try:
-            df_i = read_fpt_xlsx(
-                path,
-                sheet_name=sheet_name,
-                fuel_mass_col=fuel_mass_col,
-                power_col=power_col,
-                speed_col=speed_col,
-                rpm_round_digits=rpm_round_digits,
-            )
-            if not df_i.empty:
-                all_rows.append(df_i)
-        except Exception as exc:
-            print(f"[ERROR] Falha lendo {path.name}: {exc}")
+    for pair in selected_pairs:
+        for path in [pair.diesel_path, pair.ethanol_path]:
+            try:
+                df_i = read_fpt_xlsx(
+                    path,
+                    pair_id=pair.pair_id,
+                    pair_label=pair.pair_label,
+                    sheet_name=sheet_name,
+                    fuel_mass_col=fuel_mass_col,
+                    power_col=power_col,
+                    speed_col=speed_col,
+                    rpm_round_digits=rpm_round_digits,
+                )
+                if not df_i.empty:
+                    all_rows.append(df_i)
+            except Exception as exc:
+                print(f"[ERROR] Falha lendo {path.name}: {exc}")
 
     if not all_rows:
         raise SystemExit("Nenhum arquivo FPT valido foi lido.")
@@ -769,7 +1081,7 @@ def main() -> None:
     agg_df = attach_diesel_baseline(agg_df)
     agg_df = attach_machine_scenarios(agg_df, defaults_cfg)
 
-    kpi_path = safe_to_excel(agg_df.sort_values(["Fuel_Label", "RPM"]).copy(), out_dir / "lv_kpis_fpt.xlsx")
+    kpi_path = safe_to_excel(agg_df.sort_values(["Pair_ID", "Fuel_Label", "RPM"]).copy(), out_dir / "lv_kpis_fpt.xlsx")
     print(f"[OK] KPI salvo: {kpi_path}")
 
     compare_df = build_compare_table(agg_df)
@@ -777,7 +1089,20 @@ def main() -> None:
         cmp_path = safe_to_excel(compare_df, out_dir / "compare_rpm_diesel_vs_e94h6_fpt.xlsx")
         print(f"[OK] Comparativo salvo: {cmp_path}")
 
-    make_plots(agg_df, plot_dir=plot_dir)
+    pair_values = [pair.pair_id for pair in selected_pairs]
+    if len(pair_values) == 1:
+        make_plots(agg_df, plot_dir=plot_dir)
+    else:
+        for pair in selected_pairs:
+            pair_df = agg_df[agg_df["Pair_ID"].eq(pair.pair_id)].copy()
+            if pair_df.empty:
+                continue
+            pair_plot_dir = plot_dir / pair.pair_id
+            pair_compare_df = build_compare_table(pair_df)
+            if not pair_compare_df.empty:
+                pair_cmp_path = safe_to_excel(pair_compare_df, out_dir / f"compare_{pair.pair_id}.xlsx")
+                print(f"[OK] Comparativo do par salvo: {pair_cmp_path}")
+            make_plots(pair_df, plot_dir=pair_plot_dir)
 
 
 if __name__ == "__main__":
