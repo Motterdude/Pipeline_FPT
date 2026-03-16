@@ -39,6 +39,15 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
   - `Diesel_Baseline_BMEP_bar`
   - `Delta_Torque_Nm_vs_Diesel`
   - `Delta_BMEP_bar_vs_Diesel`
+- Metricas novas para curva do compressor:
+  - `P_B_Compr_rel_mbar`
+  - `P_B_IC_rel_mbar`
+  - `P_B_Compr_abs_mbar`
+  - `P_B_IC_abs_mbar`
+  - `T_AIR_C`
+  - `RH_Air_pct`
+  - `Compressor_PRatio_abs`
+  - `Compressor_VolFlow_m3_s`
 - Plots novos:
   - `custo_especifico_r_kwh_vs_rpm.png`
   - `economia_r_kwh_vs_diesel_rpm.png`
@@ -48,6 +57,9 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
   - `pressao_coletor_mbar_vs_rpm.png`
   - `torque_nm_vs_rpm.png`
   - `bmep_bar_vs_rpm.png`
+  - `curva_compressor_pratio_vs_power_kw.png`
+  - `curva_compressor_pratio_vs_vazao_massica_kg_h.png`
+  - `curva_compressor_pratio_vs_vazao_volumetrica_m3_s.png`
   - `eficiencia_volumetrica_vs_rpm.png`
   - `potencia_intercooler_kw_vs_rpm.png`
 
@@ -64,6 +76,8 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
 - A pressao de coletor `P_i_MF` agora e normalizada para `mBar`, convertendo automaticamente series em `bar`, `kPa` ou `mBar` conforme a magnitude dos dados.
 - O torque agora usa `M_dyno` ou `M dyno` como fonte principal, com fallback para `9550 * Power_kW / RPM` se o canal nao estiver disponivel.
 - A `BMEP` agora e calculada em `bar` pela relacao de 4 tempos com torque e cilindrada detectada do motor.
+- A curva do compressor agora usa `P_B_Compr` e `P_B_IC` como pressoes relativas, converte ambas para absolutas com base em `1013 mBar` e plota `PRatio_abs` contra potencia, vazao massica e vazao volumetrica.
+- A vazao volumetrica do compressor agora considera umidade relativa via `CAIR_H1` ou `RH air`; quando a umidade nao existe no arquivo, o pipeline assume `0% RH` e informa isso no log.
 - A eficiencia volumetrica agora usa `1013 mBar` de referencia, `T_i_MF` como temperatura de referencia e cilindrada detectada pelo nome do arquivo (`NEF67/NEF6 -> 6,7 L`; `C13/Cursore 13/Cursor 13 -> 12,9 L`) com `6` cilindros.
 - A potencia dissipada no intercooler agora usa `Air_kg_h * cp_ar * (T_B_IC - T_i_MF)`, com `cp_ar = 1,005 kJ/kg.K`.
 - O fluxo do FPT agora salva o `lv_kpis_fpt.xlsx` bruto e so depois aplica o filtro manual de pontos para comparativos e plots.

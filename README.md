@@ -18,6 +18,7 @@ Pipeline standalone para comparar um motor Diesel `D85B15` vs Etanol `E94H6` a p
   - pressao no coletor em `mBar`
   - torque em `Nm`
   - `BMEP` em `bar`
+  - curva de operacao do turbo-compressor
   - eficiencia volumetrica
   - potencia dissipada no intercooler
   - custo horario
@@ -108,6 +109,12 @@ Premissas termofluidicas:
   - usa a cilindrada total detectada do motor
   - formula de 4 tempos: `BMEP = 4 * pi * T / Vd`
   - saida final em `bar`
+- curva do compressor:
+  - `PRatio_abs = P_B_IC_abs / P_B_Compr_abs`
+  - `P_B_Compr` e `P_B_IC` sao lidas como pressao relativa e convertidas para absoluta somando `1013 mBar`
+  - a vazao volumetrica usa `Air_kg_h`, `T_AIR/Air_tAFS`, pressao absoluta na entrada do compressor e umidade relativa
+  - a umidade relativa vem de `CAIR_H1` no caso do ConsysAir e de `RH air` nas provas fora da PUC
+  - se a umidade nao existir no arquivo, o pipeline assume `0% RH` e avisa no log
 
 Filtro de pontos para plot:
 
@@ -132,6 +139,9 @@ Inclui tambem:
 - `out_FPT/plots/pressao_coletor_mbar_vs_rpm.png`
 - `out_FPT/plots/torque_nm_vs_rpm.png`
 - `out_FPT/plots/bmep_bar_vs_rpm.png`
+- `out_FPT/plots/curva_compressor_pratio_vs_power_kw.png`
+- `out_FPT/plots/curva_compressor_pratio_vs_vazao_massica_kg_h.png`
+- `out_FPT/plots/curva_compressor_pratio_vs_vazao_volumetrica_m3_s.png`
 - `out_FPT/plots/eficiencia_volumetrica_vs_rpm.png`
 - `out_FPT/plots/potencia_intercooler_kw_vs_rpm.png`
 - `out_FPT/plots/economia_r_kwh_vs_diesel_rpm.png`

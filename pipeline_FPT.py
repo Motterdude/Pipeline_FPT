@@ -30,6 +30,7 @@ LOCAL_STATE_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "pipe
 PAIR_SELECTION_PATH = LOCAL_STATE_DIR / "last_pair_selection.json"
 PLOT_POINT_FILTER_PATH = LOCAL_STATE_DIR / "plot_point_filter_last.json"
 AIR_GAS_CONSTANT_J_KG_K = 287.058
+WATER_VAPOR_GAS_CONSTANT_J_KG_K = 461.495
 ETA_V_REF_PRESSURE_MBAR = 1013.0
 ENGINE_CYLINDERS = 6
 AIR_CP_KJ_KG_K = 1.005
@@ -55,6 +56,10 @@ FPT_COLUMN_ALIASES = {
     "speed": ["SPEED", "n engine", "n_engine", "Engine Speed", "Epm_nEng"],
     "torque": ["M_dyno", "M dyno", "M_dyno_Corr", "M dyno Corr", "TORQUE"],
     "air_mass": ["Sensyflow", "qm Air", "qmair", "qm_air", "Air mass", "Air_Mass"],
+    "compressor_inlet_pressure": ["P_b_compr", "p b compr", "p_b_compr"],
+    "compressor_outlet_pressure": ["P_b_IC", "p b IC", "p_b_ic"],
+    "compressor_inlet_temp": ["T_AIR", "Air_tAFS", "t_air", "air_tafs"],
+    "relative_humidity": ["CAIR_H1", "RH air", "rhair"],
     "intake_pressure": ["P_i_MF", "p i MF", "p_i_mf"],
     "intake_temp": ["T_i_MF", "T i MF", "t_i_mf"],
     "pre_ic_temp": ["T_b_IC", "T b IC", "t_b_ic"],
@@ -154,6 +159,22 @@ def _pressure_series_to_mbar(series: pd.Series) -> pd.Series:
     if median <= 400.0:
         return values * 10.0
     return values
+
+
+def _humidity_series_to_pct(series: pd.Series) -> pd.Series:
+    values = pd.to_numeric(series, errors="coerce")
+    finite = values[np.isfinite(values)]
+    if finite.empty:
+        return values
+    median = float(finite.median())
+    if median <= 1.5:
+        values = values * 100.0
+    return values.clip(lower=0.0, upper=100.0)
+
+
+def _saturation_vapor_pressure_pa(temp_c: pd.Series) -> pd.Series:
+    temp = pd.to_numeric(temp_c, errors="coerce")
+    return 611.2 * np.exp((17.67 * temp) / (temp + 243.5))
 
 
 def load_last_pair_selection() -> List[Tuple[str, str]]:
@@ -305,7 +326,7 @@ def load_fpt_measure_dataframe(
     fuel_mass_col: str,
     power_col: str,
     speed_col: str,
-) -> Tuple[pd.DataFrame, str, str, str, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+) -> Tuple[pd.DataFrame, str, str, str, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
     workbook = pd.ExcelFile(path)
     sheet_candidates: List[str] = []
     requested_sheet = str(sheet_name or "").strip()
@@ -332,6 +353,26 @@ def load_fpt_measure_dataframe(
                     torque_col = resolve_col_with_aliases(df, "torque", FPT_COLUMN_ALIASES["torque"])
                 except KeyError:
                     torque_col = None
+                comp_inlet_pressure_col = None
+                try:
+                    comp_inlet_pressure_col = resolve_col_with_aliases(df, "compressor_inlet_pressure", FPT_COLUMN_ALIASES["compressor_inlet_pressure"])
+                except KeyError:
+                    comp_inlet_pressure_col = None
+                comp_outlet_pressure_col = None
+                try:
+                    comp_outlet_pressure_col = resolve_col_with_aliases(df, "compressor_outlet_pressure", FPT_COLUMN_ALIASES["compressor_outlet_pressure"])
+                except KeyError:
+                    comp_outlet_pressure_col = None
+                comp_inlet_temp_col = None
+                try:
+                    comp_inlet_temp_col = resolve_col_with_aliases(df, "compressor_inlet_temp", FPT_COLUMN_ALIASES["compressor_inlet_temp"])
+                except KeyError:
+                    comp_inlet_temp_col = None
+                rel_humidity_col = None
+                try:
+                    rel_humidity_col = resolve_col_with_aliases(df, "relative_humidity", FPT_COLUMN_ALIASES["relative_humidity"])
+                except KeyError:
+                    rel_humidity_col = None
                 air_col = None
                 try:
                     air_col = resolve_col_with_aliases(df, "air_mass", FPT_COLUMN_ALIASES["air_mass"])
@@ -357,7 +398,21 @@ def load_fpt_measure_dataframe(
                         f"[INFO] {path.name}: usei sheet='{candidate_sheet}' header={header_row} "
                         f"para compatibilizar o layout do arquivo."
                     )
-                return df, fb_col, p_col, rpm_col, torque_col, air_col, intake_pressure_col, intake_temp_col, pre_ic_temp_col
+                return (
+                    df,
+                    fb_col,
+                    p_col,
+                    rpm_col,
+                    torque_col,
+                    comp_inlet_pressure_col,
+                    comp_outlet_pressure_col,
+                    comp_inlet_temp_col,
+                    rel_humidity_col,
+                    air_col,
+                    intake_pressure_col,
+                    intake_temp_col,
+                    pre_ic_temp_col,
+                )
             except KeyError as exc:
                 errors.append(f"{candidate_sheet}/header={header_row}: {exc}")
                 continue
@@ -721,7 +776,21 @@ def read_fpt_xlsx(
         print(f"[INFO] Pulei {path.name}: combustivel nao reconhecido no nome.")
         return pd.DataFrame()
 
-    df, fb_col, p_col, rpm_col, torque_col, air_col, intake_pressure_col, intake_temp_col, pre_ic_temp_col = load_fpt_measure_dataframe(
+    (
+        df,
+        fb_col,
+        p_col,
+        rpm_col,
+        torque_col,
+        comp_inlet_pressure_col,
+        comp_outlet_pressure_col,
+        comp_inlet_temp_col,
+        rel_humidity_col,
+        air_col,
+        intake_pressure_col,
+        intake_temp_col,
+        pre_ic_temp_col,
+    ) = load_fpt_measure_dataframe(
         path,
         sheet_name=sheet_name,
         fuel_mass_col=fuel_mass_col,
@@ -729,9 +798,15 @@ def read_fpt_xlsx(
         speed_col=speed_col,
     )
 
+    if rel_humidity_col is None:
+        print(f"[WARN] {path.name}: umidade relativa nao encontrada; assumi 0% RH para a vazao volumetrica do compressor.")
     pressure_series = _pressure_series_to_mbar(df[intake_pressure_col]) if intake_pressure_col else pd.Series(pd.NA, index=df.index)
     intake_temp_series = pd.to_numeric(df[intake_temp_col], errors="coerce") if intake_temp_col else pd.Series(pd.NA, index=df.index)
     pre_ic_temp_series = pd.to_numeric(df[pre_ic_temp_col], errors="coerce") if pre_ic_temp_col else pd.Series(pd.NA, index=df.index)
+    comp_inlet_pressure_series = _pressure_series_to_mbar(df[comp_inlet_pressure_col]) if comp_inlet_pressure_col else pd.Series(pd.NA, index=df.index)
+    comp_outlet_pressure_series = _pressure_series_to_mbar(df[comp_outlet_pressure_col]) if comp_outlet_pressure_col else pd.Series(pd.NA, index=df.index)
+    comp_inlet_temp_series = pd.to_numeric(df[comp_inlet_temp_col], errors="coerce") if comp_inlet_temp_col else pd.Series(pd.NA, index=df.index)
+    rel_humidity_series = _humidity_series_to_pct(df[rel_humidity_col]) if rel_humidity_col else pd.Series(0.0, index=df.index)
     out = pd.DataFrame(
         {
             "Pair_ID": pair_id,
@@ -744,6 +819,10 @@ def read_fpt_xlsx(
             "Torque_Nm": pd.to_numeric(df[torque_col], errors="coerce") if torque_col else pd.NA,
             "Speed_RPM_raw": pd.to_numeric(df[rpm_col], errors="coerce"),
             "Air_kg_h": pd.to_numeric(df[air_col], errors="coerce") if air_col else pd.NA,
+            "P_B_Compr_rel_mbar": comp_inlet_pressure_series,
+            "P_B_IC_rel_mbar": comp_outlet_pressure_series,
+            "T_AIR_C": comp_inlet_temp_series,
+            "RH_Air_pct": rel_humidity_series,
             "P_i_MF_mbar": pressure_series,
             "T_i_MF_C": intake_temp_series,
             "T_B_IC_C": pre_ic_temp_series,
@@ -768,6 +847,10 @@ def aggregate_curve_rows(df: pd.DataFrame) -> pd.DataFrame:
             Torque_Nm=("Torque_Nm", "mean"),
             Consumo_kg_h=("Consumo_kg_h", "mean"),
             Air_kg_h=("Air_kg_h", "mean"),
+            P_B_Compr_rel_mbar=("P_B_Compr_rel_mbar", "mean"),
+            P_B_IC_rel_mbar=("P_B_IC_rel_mbar", "mean"),
+            T_AIR_C=("T_AIR_C", "mean"),
+            RH_Air_pct=("RH_Air_pct", "mean"),
             P_i_MF_mbar=("P_i_MF_mbar", "mean"),
             T_i_MF_C=("T_i_MF_C", "mean"),
             T_B_IC_C=("T_B_IC_C", "mean"),
@@ -775,6 +858,10 @@ def aggregate_curve_rows(df: pd.DataFrame) -> pd.DataFrame:
             Torque_Nm_sd=("Torque_Nm", "std"),
             Consumo_kg_h_sd=("Consumo_kg_h", "std"),
             Air_kg_h_sd=("Air_kg_h", "std"),
+            P_B_Compr_rel_mbar_sd=("P_B_Compr_rel_mbar", "std"),
+            P_B_IC_rel_mbar_sd=("P_B_IC_rel_mbar", "std"),
+            T_AIR_C_sd=("T_AIR_C", "std"),
+            RH_Air_pct_sd=("RH_Air_pct", "std"),
             P_i_MF_mbar_sd=("P_i_MF_mbar", "std"),
             T_i_MF_C_sd=("T_i_MF_C", "std"),
             T_B_IC_C_sd=("T_B_IC_C", "std"),
@@ -816,6 +903,10 @@ def compute_base_metrics(df: pd.DataFrame) -> pd.DataFrame:
     power_kw = pd.to_numeric(out["Power_kW"], errors="coerce")
     torque_nm = pd.to_numeric(out.get("Torque_Nm", pd.NA), errors="coerce")
     speed_rpm = pd.to_numeric(out.get("Speed_RPM", out.get("RPM", pd.NA)), errors="coerce")
+    comp_inlet_rel_mbar = pd.to_numeric(out.get("P_B_Compr_rel_mbar", pd.NA), errors="coerce")
+    comp_outlet_rel_mbar = pd.to_numeric(out.get("P_B_IC_rel_mbar", pd.NA), errors="coerce")
+    comp_inlet_temp_c = pd.to_numeric(out.get("T_AIR_C", pd.NA), errors="coerce")
+    rel_humidity_pct = pd.to_numeric(out.get("RH_Air_pct", pd.NA), errors="coerce").fillna(0.0).clip(lower=0.0, upper=100.0)
     intake_temp_c = pd.to_numeric(out.get("T_i_MF_C", pd.NA), errors="coerce")
     pre_ic_temp_c = pd.to_numeric(out.get("T_B_IC_C", pd.NA), errors="coerce")
     engine_disp_l = pd.to_numeric(out.get("Engine_Displacement_L", pd.NA), errors="coerce")
@@ -825,9 +916,22 @@ def compute_base_metrics(df: pd.DataFrame) -> pd.DataFrame:
     custo_r_h = pd.to_numeric(out["Custo_R_h"], errors="coerce")
     out["Custo_R_kWh"] = (custo_r_h / power_kw).where(power_kw.gt(0), pd.NA)
     out["Air_kg_h_kW"] = (air_kg_h / power_kw).where(power_kw.gt(0), pd.NA)
+    air_mdot = air_kg_h / 3600.0
+    out["P_B_Compr_abs_mbar"] = (comp_inlet_rel_mbar + ETA_V_REF_PRESSURE_MBAR).where((comp_inlet_rel_mbar + ETA_V_REF_PRESSURE_MBAR).gt(0), pd.NA)
+    out["P_B_IC_abs_mbar"] = (comp_outlet_rel_mbar + ETA_V_REF_PRESSURE_MBAR).where((comp_outlet_rel_mbar + ETA_V_REF_PRESSURE_MBAR).gt(0), pd.NA)
+    comp_inlet_abs_pa = pd.to_numeric(out["P_B_Compr_abs_mbar"], errors="coerce") * 100.0
+    comp_outlet_abs_pa = pd.to_numeric(out["P_B_IC_abs_mbar"], errors="coerce") * 100.0
+    out["Compressor_PRatio_abs"] = (comp_outlet_abs_pa / comp_inlet_abs_pa).where(comp_inlet_abs_pa.gt(0), pd.NA)
+    comp_inlet_temp_k = comp_inlet_temp_c + 273.15
+    sat_vapor_pa = _saturation_vapor_pressure_pa(comp_inlet_temp_c)
+    rel_humidity_frac = (rel_humidity_pct / 100.0).clip(lower=0.0, upper=1.0)
+    vapor_pa = (rel_humidity_frac * sat_vapor_pa).where(comp_inlet_temp_k.gt(0), pd.NA)
+    vapor_pa = pd.Series(np.minimum(vapor_pa, comp_inlet_abs_pa * 0.98), index=out.index)
+    dry_air_pa = comp_inlet_abs_pa - vapor_pa
+    rho_moist = ((dry_air_pa / AIR_GAS_CONSTANT_J_KG_K) + (vapor_pa / WATER_VAPOR_GAS_CONSTANT_J_KG_K)) / comp_inlet_temp_k
+    out["Compressor_VolFlow_m3_s"] = (air_mdot / rho_moist).where((air_mdot > 0) & rho_moist.gt(0), pd.NA)
     intake_temp_k = intake_temp_c + 273.15
     rho_ref = ((ETA_V_REF_PRESSURE_MBAR * 100.0) / (AIR_GAS_CONSTANT_J_KG_K * intake_temp_k)).where(intake_temp_k.gt(0), pd.NA)
-    air_mdot = air_kg_h / 3600.0
     engine_disp_total_m3 = engine_disp_l / 1000.0
     engine_disp_per_cyl_m3 = (engine_disp_total_m3 / ENGINE_CYLINDERS).where(engine_disp_total_m3.gt(0), pd.NA) if ENGINE_CYLINDERS > 0 else pd.Series(pd.NA, index=out.index)
     theoretical_volume_flow_m3_s = (engine_disp_per_cyl_m3 * ENGINE_CYLINDERS * speed_rpm / 2.0 / 60.0).where(speed_rpm.gt(0), pd.NA)
@@ -1045,6 +1149,8 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
             "BMEP_bar": "Diesel_BMEP_bar",
             "Air_kg_h": "Diesel_Air_kg_h",
             "Air_kg_h_kW": "Diesel_Air_kg_h_kW",
+            "Compressor_PRatio_abs": "Diesel_Compressor_PRatio_abs",
+            "Compressor_VolFlow_m3_s": "Diesel_Compressor_VolFlow_m3_s",
             "P_i_MF_mbar": "Diesel_P_i_MF_mbar",
             "Eta_v_pct": "Diesel_Eta_v_pct",
             "Q_intercooler_kW": "Diesel_Q_intercooler_kW",
@@ -1063,6 +1169,8 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
             "BMEP_bar": "E94H6_BMEP_bar",
             "Air_kg_h": "E94H6_Air_kg_h",
             "Air_kg_h_kW": "E94H6_Air_kg_h_kW",
+            "Compressor_PRatio_abs": "E94H6_Compressor_PRatio_abs",
+            "Compressor_VolFlow_m3_s": "E94H6_Compressor_VolFlow_m3_s",
             "P_i_MF_mbar": "E94H6_P_i_MF_mbar",
             "Eta_v_pct": "E94H6_Eta_v_pct",
             "Q_intercooler_kW": "E94H6_Q_intercooler_kW",
@@ -1084,6 +1192,8 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
         "Diesel_BMEP_bar",
         "Diesel_Air_kg_h",
         "Diesel_Air_kg_h_kW",
+        "Diesel_Compressor_PRatio_abs",
+        "Diesel_Compressor_VolFlow_m3_s",
         "Diesel_P_i_MF_mbar",
         "Diesel_Eta_v_pct",
         "Diesel_Q_intercooler_kW",
@@ -1102,6 +1212,8 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
         "E94H6_BMEP_bar",
         "E94H6_Air_kg_h",
         "E94H6_Air_kg_h_kW",
+        "E94H6_Compressor_PRatio_abs",
+        "E94H6_Compressor_VolFlow_m3_s",
         "E94H6_P_i_MF_mbar",
         "E94H6_Eta_v_pct",
         "E94H6_Q_intercooler_kW",
@@ -1457,20 +1569,22 @@ def _style_axes(
     ax,
     *,
     x_values: pd.Series,
+    x_label: str = "Speed (RPM)",
+    x_tick_step: Optional[float] = RPM_TICK_STEP,
     title: str,
     y_label: str,
     y_tick_divisor: Optional[float] = None,
 ) -> None:
     x_num = pd.to_numeric(x_values, errors="coerce").dropna().tolist()
-    if x_num:
+    if x_num and x_tick_step is not None and np.isfinite(x_tick_step) and x_tick_step > 0:
         xmin = min(x_num)
         xmax = max(x_num)
-        x_start = np.floor(xmin / RPM_TICK_STEP) * RPM_TICK_STEP
-        x_end = np.ceil(xmax / RPM_TICK_STEP) * RPM_TICK_STEP
-        xticks = np.arange(x_start, x_end + RPM_TICK_STEP * 0.5, RPM_TICK_STEP).tolist()
+        x_start = np.floor(xmin / x_tick_step) * x_tick_step
+        x_end = np.ceil(xmax / x_tick_step) * x_tick_step
+        xticks = np.arange(x_start, x_end + x_tick_step * 0.5, x_tick_step).tolist()
         ax.set_xlim(x_start, x_end)
         ax.set_xticks(xticks)
-    ax.set_xlabel("Speed (RPM)")
+    ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     ax.set_title(title)
     ax.grid(True, which="both", linestyle="--", linewidth=0.5)
@@ -1521,6 +1635,61 @@ def plot_dual_fuel_metric(
         return
 
     _style_axes(fig, ax, x_values=df["RPM"], title=title, y_label=y_label, y_tick_divisor=y_tick_divisor)
+    outpath = plot_dir / filename
+    fig.savefig(outpath, dpi=200)
+    plt.close(fig)
+    print(f"[OK] Salvei {outpath}")
+
+
+def plot_dual_fuel_xy_metric(
+    df: pd.DataFrame,
+    *,
+    x_col: str,
+    y_col: str,
+    title: str,
+    filename: str,
+    x_label: str,
+    y_label: str,
+    plot_dir: Path,
+    y_tick_divisor: Optional[float] = None,
+) -> None:
+    fig, ax = plt.subplots()
+    any_curve = False
+    for fuel_label in ["D85B15", "E94H6"]:
+        d = df[df["Fuel_Label"].eq(fuel_label)].copy()
+        if d.empty or x_col not in d.columns or y_col not in d.columns:
+            continue
+        d[x_col] = pd.to_numeric(d[x_col], errors="coerce")
+        d[y_col] = pd.to_numeric(d[y_col], errors="coerce")
+        d = d.dropna(subset=[x_col, y_col]).sort_values(x_col)
+        if d.empty:
+            continue
+        any_curve = True
+        ax.plot(
+            d[x_col],
+            d[y_col],
+            "o-",
+            linewidth=1.8,
+            markersize=4.8,
+            color=FUEL_SPECS[fuel_label]["color"],
+            label=fuel_label,
+        )
+
+    if not any_curve:
+        plt.close(fig)
+        print(f"[WARN] Sem dados para {filename}")
+        return
+
+    _style_axes(
+        fig,
+        ax,
+        x_values=df[x_col],
+        x_label=x_label,
+        x_tick_step=None,
+        title=title,
+        y_label=y_label,
+        y_tick_divisor=y_tick_divisor,
+    )
     outpath = plot_dir / filename
     fig.savefig(outpath, dpi=200)
     plt.close(fig)
@@ -1707,6 +1876,36 @@ def make_plots(df: pd.DataFrame, plot_dir: Path) -> None:
         title="BMEP vs RPM",
         filename="bmep_bar_vs_rpm.png",
         y_label="BMEP (bar)",
+        plot_dir=plot_dir,
+    )
+    plot_dual_fuel_xy_metric(
+        df,
+        x_col="Power_kW",
+        y_col="Compressor_PRatio_abs",
+        title="Compressor pressure ratio vs power",
+        filename="curva_compressor_pratio_vs_power_kw.png",
+        x_label="Power (kW)",
+        y_label="Compressor pressure ratio (-)",
+        plot_dir=plot_dir,
+    )
+    plot_dual_fuel_xy_metric(
+        df,
+        x_col="Air_kg_h",
+        y_col="Compressor_PRatio_abs",
+        title="Compressor pressure ratio vs air mass flow",
+        filename="curva_compressor_pratio_vs_vazao_massica_kg_h.png",
+        x_label="Air mass flow (kg/h)",
+        y_label="Compressor pressure ratio (-)",
+        plot_dir=plot_dir,
+    )
+    plot_dual_fuel_xy_metric(
+        df,
+        x_col="Compressor_VolFlow_m3_s",
+        y_col="Compressor_PRatio_abs",
+        title="Compressor pressure ratio vs air volumetric flow",
+        filename="curva_compressor_pratio_vs_vazao_volumetrica_m3_s.png",
+        x_label="Air volumetric flow (m3/s)",
+        y_label="Compressor pressure ratio (-)",
         plot_dir=plot_dir,
     )
     plot_dual_fuel_metric(

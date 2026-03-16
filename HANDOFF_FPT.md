@@ -31,6 +31,14 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - `P_i_MF_mbar`
 - `Torque_Nm`
 - `BMEP_bar`
+- `P_B_Compr_rel_mbar`
+- `P_B_IC_rel_mbar`
+- `P_B_Compr_abs_mbar`
+- `P_B_IC_abs_mbar`
+- `T_AIR_C`
+- `RH_Air_pct`
+- `Compressor_PRatio_abs`
+- `Compressor_VolFlow_m3_s`
 - `T_i_MF_C`
 - `T_B_IC_C`
 - `Eta_v` e `Eta_v_pct`
@@ -80,6 +88,10 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - pressao de coletor `mBar` vs RPM
 - torque `Nm` vs RPM
 - `BMEP` `bar` vs RPM
+- curva do compressor:
+  - `PRatio_abs` vs potencia
+  - `PRatio_abs` vs vazao massica
+  - `PRatio_abs` vs vazao volumetrica
 - eficiencia volumetrica `%` vs RPM
 - potencia dissipada no intercooler `kW` vs RPM
 - `n_th` vs RPM
@@ -115,6 +127,12 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 - ajustar `FILE_INCLUDE_REGEX` no config continua sendo util para reduzir a lista de arquivos mostrada na GUI;
 - o leitor agora reconhece o layout alternativo do arquivo `SWay_P8...D85B15.xlsx`, que nao usa a aba `D` e nao traz os mesmos nomes de coluna do conjunto FPT anterior;
 - a vazao de ar entra automaticamente quando a planilha trouxer `Sensyflow` ou `qm Air`;
+- a curva do compressor usa:
+  - `P_B_Compr` e `P_B_IC` como pressao relativa
+  - soma `1013 mBar` para obter pressao absoluta
+  - `CAIR_H1` ou `RH air` para a umidade relativa
+  - `T_AIR` ou `Air_tAFS` para a temperatura de entrada
+  - fallback de `0% RH` quando a umidade nao existir no arquivo
 - a pressao de coletor entra automaticamente quando a planilha trouxer `P_i_MF` ou `p i MF`, e o pipeline normaliza a unidade final para `mBar`;
 - o torque entra automaticamente quando a planilha trouxer `M_dyno` ou `M dyno`; se faltar, o pipeline cai para `9550 * Power_kW / RPM`;
 - a `BMEP` e calculada em `bar` pela relacao de 4 tempos com torque e cilindrada detectada;
