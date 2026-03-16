@@ -62,9 +62,11 @@ Parametros principais:
 
 Observacoes da selecao de pares:
 
-- a GUI mostra os arquivos Diesel e Etanol encontrados em `raw_FPT/`;
+- a GUI sempre faz scan completo de `raw_FPT/` ao abrir e mostra todos os `.xlsx` disponiveis para escolha;
+- `FILE_INCLUDE_REGEX` nao limita a tela da GUI; ele continua util apenas para modos automaticos/filtros operacionais;
 - cada comparativo passa a ser feito por `Pair_ID`, sem misturar motores diferentes no mesmo baseline;
 - a ultima selecao fica salva localmente em `%LOCALAPPDATA%\pipeline_fpt\last_pair_selection.json`;
+- os nomes dos arquivos aparecem com quebra de linha nos seletores Diesel/Etanol, sem depender de slider horizontal;
 - se mais de um par for escolhido, os plots saem em subpastas dentro de `out_FPT/plots/`.
 
 ## Saidas

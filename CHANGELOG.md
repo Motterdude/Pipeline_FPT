@@ -16,6 +16,8 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
 - O baseline diesel e o comparativo `D85B15` vs `E94H6` agora sao calculados por par selecionado, evitando misturar arquivos de motores diferentes.
 - A descoberta de arquivos `.xlsx` em `raw_FPT/` passou a ser recursiva.
 - O modo padrao do pipeline passa a ser selecao por GUI; `PAIR_SELECTION_MODE=auto` fica disponivel como fallback operacional.
+- A GUI de pares passou a ignorar `FILE_INCLUDE_REGEX` e sempre listar tudo que estiver disponivel em `raw_FPT/`.
+- Os seletores Diesel/Etanol passaram a mostrar nomes longos com quebra de linha, sem slider horizontal.
 
 ## 2026-03-12
 

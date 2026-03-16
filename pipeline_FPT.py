@@ -241,6 +241,62 @@ def _default_pair_candidates(files: List[Path]) -> List[Tuple[Path, Path]]:
     return []
 
 
+def _build_wrapped_radio_panel(
+    parent,
+    *,
+    title: str,
+    paths: List[Path],
+    rel_name,
+    width_wrap: int = 360,
+):
+    container = ttk.Frame(parent)
+    container.columnconfigure(0, weight=1)
+    container.rowconfigure(1, weight=1)
+    ttk.Label(container, text=title).grid(row=0, column=0, sticky="w")
+
+    viewport = ttk.Frame(container)
+    viewport.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
+    viewport.columnconfigure(0, weight=1)
+    viewport.rowconfigure(0, weight=1)
+
+    canvas = tk.Canvas(viewport, highlightthickness=0)
+    scrollbar = ttk.Scrollbar(viewport, orient="vertical", command=canvas.yview)
+    inner = ttk.Frame(canvas)
+
+    canvas.configure(yscrollcommand=scrollbar.set)
+    canvas.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
+    viewport.columnconfigure(0, weight=1)
+    viewport.rowconfigure(0, weight=1)
+
+    inner_window = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+    def on_inner_configure(_event=None) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def on_canvas_configure(event) -> None:
+        canvas.itemconfigure(inner_window, width=event.width)
+
+    inner.bind("<Configure>", on_inner_configure)
+    canvas.bind("<Configure>", on_canvas_configure)
+
+    value_var = tk.StringVar(value="")
+    for row_idx, path in enumerate(paths):
+        tk.Radiobutton(
+            inner,
+            text=rel_name(path),
+            variable=value_var,
+            value=str(path.resolve()),
+            anchor="w",
+            justify="left",
+            wraplength=width_wrap,
+            padx=6,
+            pady=4,
+        ).grid(row=row_idx, column=0, sticky="ew")
+
+    return container, value_var
+
+
 def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePair]:
     if tk is None or ttk is None or messagebox is None:
         raise RuntimeError("Tkinter nao esta disponivel neste Python.")
@@ -273,7 +329,11 @@ def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePai
 
     info = ttk.Label(
         root,
-        text=f"RAW: {raw_dir}",
+        text=(
+            f"RAW: {raw_dir}\n"
+            "A GUI sempre faz scan completo da pasta e mostra todos os .xlsx disponiveis. "
+            "O FILE_INCLUDE_REGEX nao limita esta tela."
+        ),
         wraplength=1120,
         justify="left",
     )
@@ -284,30 +344,22 @@ def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePai
     body.columnconfigure(0, weight=1)
     body.columnconfigure(1, weight=1)
     body.columnconfigure(2, weight=2)
-    body.rowconfigure(1, weight=1)
+    body.rowconfigure(0, weight=1)
 
-    ttk.Label(body, text="Diesel").grid(row=0, column=0, sticky="w", padx=(0, 6))
-    ttk.Label(body, text="Etanol").grid(row=0, column=1, sticky="w", padx=(6, 6))
-    ttk.Label(body, text="Pares selecionados").grid(row=0, column=2, sticky="w", padx=(6, 0))
-
-    diesel_list = tk.Listbox(body, exportselection=False)
-    ethanol_list = tk.Listbox(body, exportselection=False)
     pair_list = ttk.Treeview(body, columns=("diesel", "ethanol"), show="headings", selectmode="browse")
     pair_list.heading("diesel", text="Diesel")
     pair_list.heading("ethanol", text="Etanol")
     pair_list.column("diesel", width=300, anchor="w")
     pair_list.column("ethanol", width=360, anchor="w")
 
-    diesel_list.grid(row=1, column=0, sticky="nsew", padx=(0, 6))
-    ethanol_list.grid(row=1, column=1, sticky="nsew", padx=(6, 6))
-    pair_list.grid(row=1, column=2, sticky="nsew", padx=(6, 0))
-
-    for path in diesel_files:
-        diesel_list.insert("end", rel_name(path))
-    for path in ethanol_files:
-        ethanol_list.insert("end", rel_name(path))
+    diesel_panel, diesel_value = _build_wrapped_radio_panel(body, title="Diesel", paths=diesel_files, rel_name=rel_name)
+    ethanol_panel, ethanol_value = _build_wrapped_radio_panel(body, title="Etanol", paths=ethanol_files, rel_name=rel_name)
+    diesel_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+    ethanol_panel.grid(row=0, column=1, sticky="nsew", padx=(6, 6))
+    pair_list.grid(row=0, column=2, sticky="nsew", padx=(6, 0))
 
     path_lookup = {rel_name(path): path for path in files}
+    abs_lookup = {str(path.resolve()): path for path in files}
 
     def refresh_pairs() -> None:
         for item_id in pair_list.get_children():
@@ -316,13 +368,11 @@ def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePai
             pair_list.insert("", "end", iid=f"pair_{idx}", values=(rel_name(diesel_path), rel_name(ethanol_path)))
 
     def add_pair() -> None:
-        diesel_idx = diesel_list.curselection()
-        ethanol_idx = ethanol_list.curselection()
-        if not diesel_idx or not ethanol_idx:
+        diesel_path = abs_lookup.get(diesel_value.get())
+        ethanol_path = abs_lookup.get(ethanol_value.get())
+        if diesel_path is None or ethanol_path is None:
             messagebox.showwarning("Par incompleto", "Selecione um arquivo diesel e um arquivo etanol.")
             return
-        diesel_path = diesel_files[int(diesel_idx[0])]
-        ethanol_path = ethanol_files[int(ethanol_idx[0])]
         candidate = (diesel_path, ethanol_path)
         if candidate in selected_pairs:
             messagebox.showinfo("Par ja existe", "Esse par ja esta na lista.")
@@ -1023,11 +1073,16 @@ def main() -> None:
     rpm_round_digits = int(_to_float(defaults_cfg.get(norm_key("RPM_ROUND_DIGITS"), "0"), default=0.0))
     pair_selection_mode = defaults_cfg.get(norm_key("PAIR_SELECTION_MODE"), "gui") or "gui"
 
-    files = discover_input_files(raw_dir, include_regex)
-    if not files:
-        raise SystemExit(f"Nenhum .xlsx selecionado em {raw_dir} com regex '{include_regex}'.")
+    all_files = discover_input_files(raw_dir, "")
+    filtered_files = discover_input_files(raw_dir, include_regex)
+    if not all_files:
+        raise SystemExit(f"Nenhum .xlsx encontrado em {raw_dir}.")
 
-    selected_pairs = resolve_selected_pairs(raw_dir=raw_dir, files=files, pair_selection_mode=pair_selection_mode)
+    selector_files = all_files if norm_key(pair_selection_mode) in {"gui", "pair_gui", "pairs_gui"} else filtered_files
+    if not selector_files:
+        raise SystemExit(f"Nenhum .xlsx disponivel para o modo '{pair_selection_mode}' com regex '{include_regex}'.")
+
+    selected_pairs = resolve_selected_pairs(raw_dir=raw_dir, files=selector_files, pair_selection_mode=pair_selection_mode)
     selected_paths: List[Path] = []
     for pair in selected_pairs:
         selected_paths.extend([pair.diesel_path, pair.ethanol_path])
@@ -1045,6 +1100,9 @@ def main() -> None:
     print(f"[INFO] RAW: {raw_dir}")
     print(f"[INFO] OUT: {out_dir}")
     print(f"[INFO] Modo de selecao de pares: {pair_selection_mode}")
+    print(f"[INFO] Arquivos detectados na pasta: {len(all_files)}")
+    if include_regex:
+        print(f"[INFO] Arquivos filtrados pela regex do config: {len(filtered_files)}")
     print(f"[INFO] Pares selecionados: {len(selected_pairs)}")
     for pair in selected_pairs:
         print(f"[INFO]   - {pair.pair_label}")

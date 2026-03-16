@@ -67,6 +67,8 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
 ## Manutencao
 
 - o pipeline agora abre uma GUI para selecionar quais pares Diesel/E94H6 devem entrar na rodada;
+- essa GUI faz scan completo de `raw_FPT/` sempre que abre e nao fica limitada por `FILE_INCLUDE_REGEX`;
+- os nomes longos dos arquivos agora aparecem com quebra de linha no seletor, sem depender de scroll horizontal;
 - se quiser bypass da GUI, usar `PAIR_SELECTION_MODE=auto` na aba `Defaults`;
 - a ultima selecao de pares fica salva localmente em `%LOCALAPPDATA%\pipeline_fpt\last_pair_selection.json`;
 - o baseline diesel e o merge de comparacao agora acontecem por `Pair_ID`, nao mais por combustivel puro no conjunto inteiro;
