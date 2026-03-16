@@ -157,6 +157,7 @@ Inclui tambem:
 ## Observacoes
 
 - O eixo X dos graficos usa `RPM` com grade fixa de `250 rpm`.
+- Os titulos dos plots por par agora incluem a familia do motor, por exemplo `NEF67` ou `Cursor 13`, para facilitar leitura rapida.
 - O reconhecimento de combustivel no nome do arquivo aceita `D85B15`, `E94H6`, `ETHANOL` e `ETANOL`.
 - Se `horas/ano` e `diesel L/h` parecerem invertidos no config, o pipeline troca automaticamente e emite aviso.
 - Os arquivos `.xlsx` e `.png` sao tratados como binarios via `.gitattributes`.

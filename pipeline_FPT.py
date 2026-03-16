@@ -132,6 +132,50 @@ def infer_engine_displacement_l(source_name: object) -> float:
     return 12.9
 
 
+def infer_engine_family_label(source_name: object) -> Optional[str]:
+    text = str(source_name or "").upper()
+    normalized = re.sub(r"[^A-Z0-9]+", "", text)
+
+    if ("CURSORE13" in normalized) or ("CURSOR13" in normalized) or ("C13" in normalized):
+        return "Cursor 13"
+    if ("NEF67" in normalized) or ("NEF6" in normalized):
+        return "NEF67"
+    return None
+
+
+def infer_plot_engine_label(df: pd.DataFrame) -> Optional[str]:
+    if df is None or df.empty:
+        return None
+
+    labels: List[str] = []
+    pair_labels = [str(value).strip() for value in df.get("Pair_Label", pd.Series(dtype=object)).dropna().unique().tolist()]
+    for value in pair_labels:
+        label = infer_engine_family_label(value)
+        if label and label not in labels:
+            labels.append(label)
+
+    if not labels and "Engine_Displacement_L" in df.columns:
+        displacements = pd.to_numeric(df["Engine_Displacement_L"], errors="coerce").dropna().unique().tolist()
+        for disp in displacements:
+            if abs(float(disp) - 6.7) < 0.2 and "NEF67" not in labels:
+                labels.append("NEF67")
+            elif abs(float(disp) - 12.9) < 0.2 and "Cursor 13" not in labels:
+                labels.append("Cursor 13")
+
+    if not labels:
+        return None
+    if len(labels) == 1:
+        return labels[0]
+    return " vs ".join(labels)
+
+
+def with_engine_in_title(title: str, df: pd.DataFrame) -> str:
+    engine_label = infer_plot_engine_label(df)
+    if not engine_label:
+        return title
+    return f"{title} | {engine_label}"
+
+
 def _to_float(value: object, default: float = float("nan")) -> float:
     try:
         if pd.isna(value):
@@ -1636,6 +1680,7 @@ def plot_dual_fuel_metric(
     y_tick_divisor: Optional[float] = None,
 ) -> None:
     fig, ax = plt.subplots()
+    plot_title = with_engine_in_title(title, df)
     any_curve = False
     for fuel_label in ["D85B15", "E94H6"]:
         d = df[df["Fuel_Label"].eq(fuel_label)].copy()
@@ -1662,7 +1707,7 @@ def plot_dual_fuel_metric(
         print(f"[WARN] Sem dados para {filename}")
         return
 
-    _style_axes(fig, ax, x_values=df["RPM"], title=title, y_label=y_label, y_tick_divisor=y_tick_divisor)
+    _style_axes(fig, ax, x_values=df["RPM"], title=plot_title, y_label=y_label, y_tick_divisor=y_tick_divisor)
     outpath = plot_dir / filename
     fig.savefig(outpath, dpi=200)
     plt.close(fig)
@@ -1682,6 +1727,7 @@ def plot_dual_fuel_xy_metric(
     y_tick_divisor: Optional[float] = None,
 ) -> None:
     fig, ax = plt.subplots()
+    plot_title = with_engine_in_title(title, df)
     any_curve = False
     for fuel_label in ["D85B15", "E94H6"]:
         d = df[df["Fuel_Label"].eq(fuel_label)].copy()
@@ -1714,7 +1760,7 @@ def plot_dual_fuel_xy_metric(
         x_values=df[x_col],
         x_label=x_label,
         x_tick_step=None,
-        title=title,
+        title=plot_title,
         y_label=y_label,
         y_tick_divisor=y_tick_divisor,
     )
@@ -1747,8 +1793,9 @@ def plot_ethanol_delta(
         return
 
     fig, ax = plt.subplots()
+    plot_title = with_engine_in_title(title, df)
     ax.plot(d["RPM"], d[y_col], "o-", linewidth=1.8, markersize=4.8, color=FUEL_SPECS["E94H6"]["color"], label="E94H6 vs diesel")
-    _style_axes(fig, ax, x_values=d["RPM"], title=title, y_label=y_label, y_tick_divisor=y_tick_divisor)
+    _style_axes(fig, ax, x_values=d["RPM"], title=plot_title, y_label=y_label, y_tick_divisor=y_tick_divisor)
     outpath = plot_dir / filename
     fig.savefig(outpath, dpi=200)
     plt.close(fig)
@@ -1772,6 +1819,7 @@ def plot_machine_scenario_dual_metric(
         return
 
     fig, ax = plt.subplots()
+    plot_title = with_engine_in_title(title, df)
     any_curve = False
     for spec in MACHINE_SCENARIO_SPECS:
         diesel_col = _scenario_machine_col(spec["key"], diesel_suffix)
@@ -1798,7 +1846,7 @@ def plot_machine_scenario_dual_metric(
         print(f"[WARN] Sem curvas validas para {filename}")
         return
 
-    _style_axes(fig, ax, x_values=d["RPM"], title=title, y_label=y_label, y_tick_divisor=y_tick_divisor)
+    _style_axes(fig, ax, x_values=d["RPM"], title=plot_title, y_label=y_label, y_tick_divisor=y_tick_divisor)
     outpath = plot_dir / filename
     fig.savefig(outpath, dpi=200)
     plt.close(fig)
@@ -1821,6 +1869,7 @@ def plot_machine_scenario_single_metric(
         return
 
     fig, ax = plt.subplots()
+    plot_title = with_engine_in_title(title, df)
     any_curve = False
     for spec in MACHINE_SCENARIO_SPECS:
         value_col = _scenario_machine_col(spec["key"], value_suffix)
@@ -1840,7 +1889,7 @@ def plot_machine_scenario_single_metric(
         print(f"[WARN] Sem curvas validas para {filename}")
         return
 
-    _style_axes(fig, ax, x_values=d["RPM"], title=title, y_label=y_label, y_tick_divisor=y_tick_divisor)
+    _style_axes(fig, ax, x_values=d["RPM"], title=plot_title, y_label=y_label, y_tick_divisor=y_tick_divisor)
     outpath = plot_dir / filename
     fig.savefig(outpath, dpi=200)
     plt.close(fig)

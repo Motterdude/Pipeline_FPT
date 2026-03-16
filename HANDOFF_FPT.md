@@ -147,6 +147,9 @@ Repositorio separado para o processamento FPT Diesel vs Etanol, sem dependencia 
   - `C13`, `Cursore 13` e `Cursor 13` -> `12,9 L`
 - a eficiencia volumetrica corrigida pela pressao do coletor usa `P_i_MF_abs = P_i_MF_rel + 1013 mBar` e `T_i_MF` para remover o ganho aparente de enchimento causado pelo boost;
 - os plots de custo especifico deixam `R$/kWh` explicito tanto no titulo quanto no eixo Y para facilitar leitura rapida;
+- os titulos dos plots por par incluem automaticamente a familia do motor para leitura rapida:
+  - `NEF6` e `NEF67` aparecem como `NEF67`
+  - `C13`, `Cursor 13` e `Cursore 13` aparecem como `Cursor 13`
 - a potencia dissipada no intercooler usa `Air_kg_h`, `T_B_IC`, `T_i_MF` e `cp_ar = 1,005 kJ/kg.K`;
 - manter `raw_FPT/` fora do Git
 - versionar `out_FPT/` quando os resultados precisarem acompanhar o codigo
