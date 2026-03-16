@@ -1885,9 +1885,9 @@ def make_plots(df: pd.DataFrame, plot_dir: Path) -> None:
     plot_dual_fuel_metric(
         df,
         y_col="Custo_R_kWh",
-        title="Specific fuel cost vs RPM",
+        title="Specific fuel cost (R$/kWh) vs RPM",
         filename="custo_especifico_r_kwh_vs_rpm.png",
-        y_label="Specific fuel cost (R$/kWh)",
+        y_label="Specific fuel cost [R$/kWh]",
         plot_dir=plot_dir,
     )
     plot_dual_fuel_metric(
@@ -2011,9 +2011,9 @@ def make_plots(df: pd.DataFrame, plot_dir: Path) -> None:
     plot_ethanol_delta(
         df,
         y_col="Economia_vs_Diesel_R_kWh",
-        title="Specific cost delta vs diesel",
+        title="Specific cost delta vs diesel (R$/kWh)",
         filename="economia_r_kwh_vs_diesel_rpm.png",
-        y_label="Delta specific cost vs diesel (R$/kWh)",
+        y_label="Delta specific cost vs diesel [R$/kWh]",
         plot_dir=plot_dir,
     )
     plot_ethanol_delta(

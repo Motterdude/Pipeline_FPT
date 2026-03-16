@@ -87,6 +87,7 @@ Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
 - A eficiencia volumetrica agora usa `1013 mBar` de referencia, `T_i_MF` como temperatura de referencia e cilindrada detectada pelo nome do arquivo (`NEF67/NEF6 -> 6,7 L`; `C13/Cursore 13/Cursor 13 -> 12,9 L`) com `6` cilindros.
 - Adicionada a eficiencia volumetrica corrigida pela pressao do coletor, usando `P_i_MF_abs = P_i_MF_rel + 1013 mBar` e `T_i_MF`, para separar o enchimento real de aspiracao do ganho aparente por boost.
 - A potencia dissipada no intercooler agora usa `Air_kg_h * cp_ar * (T_B_IC - T_i_MF)`, com `cp_ar = 1,005 kJ/kg.K`.
+- Os plots de custo especifico passaram a explicitar `R$/kWh` de forma mais visivel no titulo e no eixo Y.
 - O fluxo do FPT agora salva o `lv_kpis_fpt.xlsx` bruto e so depois aplica o filtro manual de pontos para comparativos e plots.
 
 ## 2026-03-12
