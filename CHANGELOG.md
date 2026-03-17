@@ -2,6 +2,37 @@
 
 Todas as mudancas relevantes deste repositorio devem ser registradas aqui.
 
+## 2026-03-17
+
+### Added
+
+- Fluxo novo de comparacao de combustao `NEF67` vs `Cursor 13` dentro de `pipeline_FPT.py`.
+- Persistencia local da ultima selecao de pares de combustao em `%LOCALAPPDATA%\\pipeline_fpt\\last_combustion_selection.json`.
+- Persistencia local do ultimo filtro de pontos da analise de combustao em `%LOCALAPPDATA%\\pipeline_fpt\\combustion_plot_point_filter_last.json`.
+- Resolucao automatica de canais de combustao por aliases `EE_MEA...` para:
+  - `PCYL1`
+  - `APMAX1`
+  - `PMAX1`
+  - `IMEP1`
+  - `IMEPH1`
+  - `IMPEL1`
+  - `AI05_1`
+  - `AI10_1`
+  - `AI50_1`
+  - `AI90_1`
+  - `RMAX1`
+- Novas saidas de combustao:
+  - `out_FPT/lv_combustion_fpt.xlsx`
+  - `out_FPT/compare_rpm_combustion_nef67_vs_cursor13_fpt.xlsx`
+  - `out_FPT/compare_combustion_<pair_id>.xlsx`
+- Nova pasta `out_FPT/plots_combustion/` com os graficos por canal de combustao vs `RPM`.
+
+### Changed
+
+- O pipeline agora mantem estados separados para selecao/filtro do fluxo de KPI e do fluxo de combustao.
+- A descoberta de pares de combustao passou a sugerir automaticamente correspondencias `NEF67` vs `Cursor 13` quando os nomes dos arquivos compartilham descritores de ensaio.
+- Os outputs principais do repo foram rerodados para refletir as novas tabelas e plots de combustao.
+
 ## 2026-03-16
 
 ### Added

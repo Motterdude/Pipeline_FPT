@@ -28,7 +28,9 @@ DEFAULT_CONFIG_PATH = ROOT_DIR / "config_pipeline_fpt.xlsx"
 RPM_TICK_STEP = 250.0
 LOCAL_STATE_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "pipeline_fpt"
 PAIR_SELECTION_PATH = LOCAL_STATE_DIR / "last_pair_selection.json"
+COMBUSTION_SELECTION_PATH = LOCAL_STATE_DIR / "last_combustion_selection.json"
 PLOT_POINT_FILTER_PATH = LOCAL_STATE_DIR / "plot_point_filter_last.json"
+COMBUSTION_PLOT_POINT_FILTER_PATH = LOCAL_STATE_DIR / "combustion_plot_point_filter_last.json"
 AIR_GAS_CONSTANT_J_KG_K = 287.058
 WATER_VAPOR_GAS_CONSTANT_J_KG_K = 461.495
 ETA_V_REF_PRESSURE_MBAR = 1013.0
@@ -48,6 +50,39 @@ FUEL_SPECS = {
         "lhv_param": "LHV_KJ_KG_E94H6",
         "color": "#d62728",
     },
+}
+
+COMBUSTION_COLUMN_ALIASES = {
+    "PCYL1": ["EE_MEA198", "EEMEA198"],
+    "APMAX1": ["EE_MEA199", "EEMEA199"],
+    "PMAX1": ["EE_MEA200", "EEMEA200"],
+    "IMEP1": ["EE_MEA201", "EEMEA201"],
+    "IMEPH1": ["EE_MEA202", "EEMEA202"],
+    "IMPEL1": ["EE_MEA203", "EEMEA203"],
+    "AI05_1": ["EE_MEA204", "EEMEA204"],
+    "AI10_1": ["EE_MEA205", "EEMEA205"],
+    "AI50_1": ["EE_MEA206", "EEMEA206"],
+    "AI90_1": ["EE_MEA207", "EEMEA207"],
+    "RMAX1": ["EE_MEA208", "EEMEA208"],
+}
+
+COMBUSTION_PLOT_SPECS = [
+    {"column": "PCYL1", "title": "Combustion analysis: PCYL1 vs RPM", "filename": "pcyl1_vs_rpm.png", "y_label": "PCYL1"},
+    {"column": "APMAX1", "title": "Combustion analysis: APMAX1 vs RPM", "filename": "apmax1_vs_rpm.png", "y_label": "APMAX1"},
+    {"column": "PMAX1", "title": "Combustion analysis: PMAX1 vs RPM", "filename": "pmax1_vs_rpm.png", "y_label": "PMAX1"},
+    {"column": "IMEP1", "title": "Combustion analysis: IMEP1 vs RPM", "filename": "imep1_vs_rpm.png", "y_label": "IMEP1"},
+    {"column": "IMEPH1", "title": "Combustion analysis: IMEPH1 vs RPM", "filename": "imeph1_vs_rpm.png", "y_label": "IMEPH1"},
+    {"column": "IMPEL1", "title": "Combustion analysis: IMPEL1 vs RPM", "filename": "impel1_vs_rpm.png", "y_label": "IMPEL1"},
+    {"column": "AI05_1", "title": "Combustion analysis: AI05_1 vs RPM", "filename": "ai05_1_vs_rpm.png", "y_label": "AI05_1"},
+    {"column": "AI10_1", "title": "Combustion analysis: AI10_1 vs RPM", "filename": "ai10_1_vs_rpm.png", "y_label": "AI10_1"},
+    {"column": "AI50_1", "title": "Combustion analysis: AI50_1 vs RPM", "filename": "ai50_1_vs_rpm.png", "y_label": "AI50_1"},
+    {"column": "AI90_1", "title": "Combustion analysis: AI90_1 vs RPM", "filename": "ai90_1_vs_rpm.png", "y_label": "AI90_1"},
+    {"column": "RMAX1", "title": "Combustion analysis: RMAX1 vs RPM", "filename": "rmax1_vs_rpm.png", "y_label": "RMAX1"},
+]
+
+COMBUSTION_ENGINE_STYLES = {
+    "NEF67": {"color": "#1f77b4", "label": "NEF67"},
+    "Cursor13": {"color": "#d62728", "label": "Cursor 13"},
 }
 
 FPT_COLUMN_ALIASES = {
@@ -98,6 +133,14 @@ class FptComparePair:
     ethanol_path: Path
 
 
+@dataclass(frozen=True)
+class FptCombustionPair:
+    pair_id: str
+    pair_label: str
+    nef67_path: Path
+    cursor13_path: Path
+
+
 def norm_key(value: object) -> str:
     return str(value or "").strip().lower()
 
@@ -119,6 +162,16 @@ def make_pair_id(diesel_path: Path, ethanol_path: Path) -> str:
 
 def make_pair_label(diesel_path: Path, ethanol_path: Path) -> str:
     return f"{diesel_path.stem} vs {ethanol_path.stem}"
+
+
+def make_combustion_pair_id(nef67_path: Path, cursor13_path: Path) -> str:
+    nef67_token = slugify_token(nef67_path.stem)
+    cursor13_token = slugify_token(cursor13_path.stem)
+    return f"{nef67_token}__vs__{cursor13_token}"
+
+
+def make_combustion_pair_label(nef67_path: Path, cursor13_path: Path) -> str:
+    return f"{nef67_path.stem} vs {cursor13_path.stem}"
 
 
 def infer_engine_displacement_l(source_name: object) -> float:
@@ -263,6 +316,39 @@ def save_last_pair_selection(pairs: List[FptComparePair]) -> None:
     PAIR_SELECTION_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
 
 
+def load_last_combustion_selection() -> List[Tuple[str, str]]:
+    try:
+        if not COMBUSTION_SELECTION_PATH.exists():
+            return []
+        payload = json.loads(COMBUSTION_SELECTION_PATH.read_text(encoding="utf-8"))
+        raw_pairs = payload.get("pairs", [])
+        out: List[Tuple[str, str]] = []
+        for item in raw_pairs:
+            nef67_raw = str(item.get("nef67_path", "")).strip()
+            cursor13_raw = str(item.get("cursor13_path", "")).strip()
+            if nef67_raw and cursor13_raw:
+                out.append((nef67_raw, cursor13_raw))
+        return out
+    except Exception:
+        return []
+
+
+def save_last_combustion_selection(pairs: List[FptCombustionPair]) -> None:
+    LOCAL_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "pairs": [
+            {
+                "pair_id": pair.pair_id,
+                "pair_label": pair.pair_label,
+                "nef67_path": str(pair.nef67_path),
+                "cursor13_path": str(pair.cursor13_path),
+            }
+            for pair in pairs
+        ]
+    }
+    COMBUSTION_SELECTION_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
+
+
 def _normalize_plot_point_key(pair_id: object, fuel_label: object, rpm_value: object) -> Optional[Tuple[str, str, float]]:
     pair = str(pair_id or "").strip()
     fuel = str(fuel_label or "").strip()
@@ -324,6 +410,67 @@ def save_last_plot_point_selection_state(
         print(f"[WARN] Nao consegui salvar a ultima selecao de pontos do plot FPT: {exc}")
 
 
+def _normalize_combustion_plot_point_key(pair_id: object, engine_role: object, rpm_value: object) -> Optional[Tuple[str, str, float]]:
+    pair = str(pair_id or "").strip()
+    engine = str(engine_role or "").strip()
+    rpm = _to_float(rpm_value, default=float("nan"))
+    if not pair or not engine or not np.isfinite(rpm):
+        return None
+    return pair, engine, round(float(rpm), 6)
+
+
+def _combustion_plot_point_keys_to_jsonable(points: Set[Tuple[str, str, float]]) -> List[Dict[str, object]]:
+    out: List[Dict[str, object]] = []
+    for pair_id, engine_role, rpm_value in sorted(points, key=lambda item: (_canon_text(item[0]), _canon_text(item[1]), item[2])):
+        out.append({"pair_id": pair_id, "engine_role": engine_role, "rpm": round(float(rpm_value), 6)})
+    return out
+
+
+def load_last_combustion_plot_point_selection_state() -> Optional[Dict[str, object]]:
+    try:
+        if not COMBUSTION_PLOT_POINT_FILTER_PATH.exists():
+            return None
+        payload = json.loads(COMBUSTION_PLOT_POINT_FILTER_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+    selected_points: Set[Tuple[str, str, float]] = set()
+    for row in payload.get("selected_points", []) or []:
+        if not isinstance(row, dict):
+            continue
+        key = _normalize_combustion_plot_point_key(row.get("pair_id", ""), row.get("engine_role", ""), row.get("rpm", None))
+        if key is not None:
+            selected_points.add(key)
+
+    available_points: Set[Tuple[str, str, float]] = set()
+    for row in payload.get("available_points", []) or []:
+        if not isinstance(row, dict):
+            continue
+        key = _normalize_combustion_plot_point_key(row.get("pair_id", ""), row.get("engine_role", ""), row.get("rpm", None))
+        if key is not None:
+            available_points.add(key)
+
+    return {
+        "selected_points": selected_points,
+        "available_points": available_points,
+    }
+
+
+def save_last_combustion_plot_point_selection_state(
+    selected_points: Set[Tuple[str, str, float]],
+    available_points: Set[Tuple[str, str, float]],
+) -> None:
+    try:
+        LOCAL_STATE_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "selected_points": _combustion_plot_point_keys_to_jsonable(selected_points),
+            "available_points": _combustion_plot_point_keys_to_jsonable(available_points),
+        }
+        COMBUSTION_PLOT_POINT_FILTER_PATH.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
+    except Exception as exc:
+        print(f"[WARN] Nao consegui salvar a ultima selecao de pontos do plot de combustao FPT: {exc}")
+
+
 def safe_to_excel(df: pd.DataFrame, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -370,6 +517,43 @@ def resolve_col_with_aliases(df: pd.DataFrame, requested: str, aliases: List[str
         except KeyError:
             continue
     raise KeyError(f"Nenhuma coluna encontrada para '{requested}' com aliases {aliases}.")
+
+
+def resolve_combustion_columns(df: pd.DataFrame) -> Dict[str, str]:
+    resolved: Dict[str, str] = {}
+    for target_col, aliases in COMBUSTION_COLUMN_ALIASES.items():
+        for alias in aliases:
+            try:
+                resolved[target_col] = resolve_col(df, alias)
+                break
+            except KeyError:
+                continue
+    return resolved
+
+
+def has_combustion_columns(path: Path, *, sheet_name: str) -> bool:
+    try:
+        workbook = pd.ExcelFile(path)
+    except Exception:
+        return False
+
+    sheet_candidates: List[str] = []
+    requested_sheet = str(sheet_name or "").strip()
+    if requested_sheet and requested_sheet in workbook.sheet_names:
+        sheet_candidates.append(requested_sheet)
+    for candidate in workbook.sheet_names:
+        if candidate not in sheet_candidates:
+            sheet_candidates.append(candidate)
+
+    for candidate_sheet in sheet_candidates:
+        for header_row in [0, 1, 2]:
+            try:
+                df = pd.read_excel(path, sheet_name=candidate_sheet, header=header_row, nrows=0, dtype=object)
+            except Exception:
+                continue
+            if resolve_combustion_columns(df):
+                return True
+    return False
 
 
 def load_fpt_measure_dataframe(
@@ -520,6 +704,25 @@ def build_selected_pairs_from_paths(raw_pairs: List[Tuple[Path, Path]]) -> List[
     return out
 
 
+def build_selected_combustion_pairs_from_paths(raw_pairs: List[Tuple[Path, Path]]) -> List[FptCombustionPair]:
+    out: List[FptCombustionPair] = []
+    seen_ids: Dict[str, int] = {}
+    for nef67_path, cursor13_path in raw_pairs:
+        base_id = make_combustion_pair_id(nef67_path, cursor13_path)
+        n = seen_ids.get(base_id, 0) + 1
+        seen_ids[base_id] = n
+        pair_id = base_id if n == 1 else f"{base_id}_{n:02d}"
+        out.append(
+            FptCombustionPair(
+                pair_id=pair_id,
+                pair_label=make_combustion_pair_label(nef67_path, cursor13_path),
+                nef67_path=nef67_path,
+                cursor13_path=cursor13_path,
+            )
+        )
+    return out
+
+
 def _default_pair_candidates(files: List[Path]) -> List[Tuple[Path, Path]]:
     diesel_files = [p for p in files if parse_fuel_label(p) == "D85B15"]
     ethanol_files = [p for p in files if parse_fuel_label(p) == "E94H6"]
@@ -537,6 +740,56 @@ def _default_pair_candidates(files: List[Path]) -> List[Tuple[Path, Path]]:
 
     if len(diesel_files) == 1 and len(ethanol_files) == 1:
         return [(diesel_files[0], ethanol_files[0])]
+    return []
+
+
+def _default_combustion_pair_candidates(files: List[Path]) -> List[Tuple[Path, Path]]:
+    nef67_files = [p for p in files if infer_engine_family_label(p.name) == "NEF67"]
+    cursor13_files = [p for p in files if infer_engine_family_label(p.name) == "Cursor 13"]
+    raw_pairs = load_last_combustion_selection()
+    if raw_pairs:
+        path_map = {str(p.resolve()): p for p in files}
+        restored_pairs: List[Tuple[Path, Path]] = []
+        for nef67_raw, cursor13_raw in raw_pairs:
+            nef67_path = path_map.get(str(Path(nef67_raw).resolve()))
+            cursor13_path = path_map.get(str(Path(cursor13_raw).resolve()))
+            if nef67_path is not None and cursor13_path is not None:
+                restored_pairs.append((nef67_path, cursor13_path))
+        if restored_pairs:
+            return restored_pairs
+
+    if len(nef67_files) == 1 and len(cursor13_files) == 1:
+        return [(nef67_files[0], cursor13_files[0])]
+
+    # Suggest obvious like-for-like pairings when names share key test descriptors.
+    scored_pairs: List[Tuple[int, str, str, Path, Path]] = []
+    for nef67_path in nef67_files:
+        nef_name = nef67_path.stem.upper()
+        for cursor13_path in cursor13_files:
+            cursor_name = cursor13_path.stem.upper()
+            score = 0
+            if ("FULL_LOAD" in nef_name and "FULL_LOAD" in cursor_name) or ("FULL LOAD" in nef_name and "FULL LOAD" in cursor_name):
+                score += 3
+            if ("ENGINE_MAP" in nef_name and "ENGINE_MAP" in cursor_name) or ("ENGINE MAP" in nef_name and "ENGINE MAP" in cursor_name):
+                score += 3
+            if ("REV24" in nef_name and "REV24" in cursor_name) or ("REV26" in nef_name and "REV26" in cursor_name):
+                score += 1
+            scored_pairs.append((score, nef67_path.name, cursor13_path.name, nef67_path, cursor13_path))
+
+    scored_pairs.sort(key=lambda item: (-item[0], _canon_text(item[1]), _canon_text(item[2])))
+    suggested: List[Tuple[Path, Path]] = []
+    used_nef67: Set[Path] = set()
+    used_cursor13: Set[Path] = set()
+    for score, _nef_name, _cursor_name, nef67_path, cursor13_path in scored_pairs:
+        if score <= 0:
+            continue
+        if nef67_path in used_nef67 or cursor13_path in used_cursor13:
+            continue
+        suggested.append((nef67_path, cursor13_path))
+        used_nef67.add(nef67_path)
+        used_cursor13.add(cursor13_path)
+    if suggested:
+        return suggested
     return []
 
 
@@ -601,6 +854,8 @@ def _build_wrapped_selected_pairs_panel(
     *,
     title: str,
     rel_name,
+    left_title: str,
+    right_title: str,
     width_wrap: int = 520,
 ):
     container = ttk.Frame(parent)
@@ -643,8 +898,8 @@ def _build_wrapped_selected_pairs_panel(
             key = str(idx)
             pair_lookup[key] = (diesel_path, ethanol_path)
             label = (
-                f"DIESEL:\n{rel_name(diesel_path)}\n\n"
-                f"ETANOL:\n{rel_name(ethanol_path)}"
+                f"{left_title.upper()}:\n{rel_name(diesel_path)}\n\n"
+                f"{right_title.upper()}:\n{rel_name(ethanol_path)}"
             )
             tk.Radiobutton(
                 inner,
@@ -663,7 +918,12 @@ def _build_wrapped_selected_pairs_panel(
     return container, value_var, pair_lookup, refresh
 
 
-def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePair]:
+def select_pairs_via_gui(
+    raw_dir: Path,
+    files: List[Path],
+    *,
+    sheet_name: str,
+) -> Tuple[List[FptComparePair], List[FptCombustionPair]]:
     if tk is None or ttk is None or messagebox is None:
         raise RuntimeError("Tkinter nao esta disponivel neste Python.")
 
@@ -672,8 +932,13 @@ def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePai
     if not diesel_files or not ethanol_files:
         raise RuntimeError("Preciso de pelo menos um arquivo diesel e um arquivo etanol para montar pares.")
 
+    combustion_files = [p for p in ethanol_files if has_combustion_columns(p, sheet_name=sheet_name)]
+    nef67_files = [p for p in combustion_files if infer_engine_family_label(p.name) == "NEF67"]
+    cursor13_files = [p for p in combustion_files if infer_engine_family_label(p.name) == "Cursor 13"]
+
     selected_pairs: List[Tuple[Path, Path]] = list(_default_pair_candidates(files))
-    result: Dict[str, List[FptComparePair] | bool] = {"pairs": [], "ok": False}
+    selected_combustion_pairs: List[Tuple[Path, Path]] = list(_default_combustion_pair_candidates(combustion_files))
+    result: Dict[str, object] = {"fuel_pairs": [], "combustion_pairs": [], "ok": False}
 
     def rel_name(path: Path) -> str:
         try:
@@ -682,13 +947,13 @@ def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePai
             return path.name
 
     root = tk.Tk()
-    root.title("Selecao de pares FPT")
+    root.title("Selecao FPT")
     root.geometry("1200x720")
     root.minsize(1080, 640)
 
     header = ttk.Label(
         root,
-        text="Selecione os pares diesel vs etanol que devem entrar no comparativo desta rodada.",
+        text="Selecione os pares do processamento FPT e, se quiser, as comparacoes de combustao.",
         font=("Segoe UI", 11, "bold"),
     )
     header.pack(fill="x", padx=12, pady=(12, 6))
@@ -705,30 +970,50 @@ def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePai
     )
     info.pack(fill="x", padx=12, pady=(0, 10))
 
-    body = ttk.Frame(root)
-    body.pack(fill="both", expand=True, padx=12, pady=(0, 12))
-    body.columnconfigure(0, weight=1)
-    body.columnconfigure(1, weight=1)
-    body.columnconfigure(2, weight=2)
-    body.rowconfigure(0, weight=1)
+    notebook = ttk.Notebook(root)
+    notebook.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
-    diesel_panel, diesel_value = _build_wrapped_radio_panel(body, title="Diesel", paths=diesel_files, rel_name=rel_name)
-    ethanol_panel, ethanol_value = _build_wrapped_radio_panel(body, title="Etanol", paths=ethanol_files, rel_name=rel_name)
+    fuel_tab = ttk.Frame(notebook)
+    combustion_tab = ttk.Frame(notebook)
+    notebook.add(fuel_tab, text="Diesel x etanol")
+    notebook.add(combustion_tab, text="Combustao")
+
+    ttk.Label(
+        fuel_tab,
+        text="Selecione os pares diesel vs etanol que devem entrar no comparativo desta rodada.",
+        wraplength=1120,
+        justify="left",
+    ).pack(fill="x", padx=12, pady=(12, 8))
+
+    fuel_body = ttk.Frame(fuel_tab)
+    fuel_body.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+    fuel_body.columnconfigure(0, weight=1)
+    fuel_body.columnconfigure(1, weight=1)
+    fuel_body.columnconfigure(2, weight=2)
+    fuel_body.rowconfigure(0, weight=1)
+
+    diesel_panel, diesel_value = _build_wrapped_radio_panel(fuel_body, title="Diesel", paths=diesel_files, rel_name=rel_name)
+    ethanol_panel, ethanol_value = _build_wrapped_radio_panel(fuel_body, title="Etanol", paths=ethanol_files, rel_name=rel_name)
     selected_panel, selected_value, selected_lookup, refresh_selected_panel = _build_wrapped_selected_pairs_panel(
-        body,
+        fuel_body,
         title="Pares selecionados",
         rel_name=rel_name,
+        left_title="Diesel",
+        right_title="Etanol",
     )
     diesel_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
     ethanol_panel.grid(row=0, column=1, sticky="nsew", padx=(6, 6))
     selected_panel.grid(row=0, column=2, sticky="nsew", padx=(6, 0))
 
+    fuel_actions = ttk.Frame(fuel_tab)
+    fuel_actions.pack(fill="x", padx=12, pady=(0, 12))
+
     abs_lookup = {str(path.resolve()): path for path in files}
 
-    def refresh_pairs() -> None:
+    def refresh_fuel_pairs() -> None:
         refresh_selected_panel(selected_pairs)
 
-    def add_pair() -> None:
+    def add_fuel_pair() -> None:
         diesel_path = abs_lookup.get(diesel_value.get())
         ethanol_path = abs_lookup.get(ethanol_value.get())
         if diesel_path is None or ethanol_path is None:
@@ -739,24 +1024,123 @@ def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePai
             messagebox.showinfo("Par ja existe", "Esse par ja esta na lista.")
             return
         selected_pairs.append(candidate)
-        refresh_pairs()
+        refresh_fuel_pairs()
+        refresh_selection_summary()
 
-    def remove_pair() -> None:
+    def remove_fuel_pair() -> None:
         selected = selected_lookup.get(selected_value.get())
         if selected is None:
             return
         diesel_path, ethanol_path = selected
         selected_pairs[:] = [pair for pair in selected_pairs if pair != (diesel_path, ethanol_path)]
-        refresh_pairs()
+        refresh_fuel_pairs()
+        refresh_selection_summary()
+
+    ttk.Button(fuel_actions, text="Adicionar par", command=add_fuel_pair).pack(side="left")
+    ttk.Button(fuel_actions, text="Remover par", command=remove_fuel_pair).pack(side="left", padx=(8, 0))
+
+    combustion_message_parts = [
+        "Selecione pares de motores etanol para comparar a analise de combustao no formato NEF67 vs Cursor 13.",
+        "Esta aba lista apenas arquivos que contem as colunas EE_MEA198...EE_MEA208.",
+    ]
+    if not combustion_files:
+        combustion_message_parts.append("Nenhum arquivo de etanol com colunas de combustao foi identificado nesta pasta.")
+    elif not nef67_files or not cursor13_files:
+        combustion_message_parts.append("Preciso de pelo menos um arquivo NEF67 e um arquivo Cursor 13 com combustao para montar pares nesta aba.")
+
+    ttk.Label(
+        combustion_tab,
+        text=" ".join(combustion_message_parts),
+        wraplength=1120,
+        justify="left",
+    ).pack(fill="x", padx=12, pady=(12, 8))
+
+    combustion_body = ttk.Frame(combustion_tab)
+    combustion_body.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+    combustion_body.columnconfigure(0, weight=1)
+    combustion_body.columnconfigure(1, weight=1)
+    combustion_body.columnconfigure(2, weight=2)
+    combustion_body.rowconfigure(0, weight=1)
+
+    nef67_panel, nef67_value = _build_wrapped_radio_panel(combustion_body, title="NEF67", paths=nef67_files, rel_name=rel_name)
+    cursor13_panel, cursor13_value = _build_wrapped_radio_panel(combustion_body, title="Cursor 13", paths=cursor13_files, rel_name=rel_name)
+    combustion_selected_panel, combustion_selected_value, combustion_selected_lookup, refresh_combustion_selected_panel = _build_wrapped_selected_pairs_panel(
+        combustion_body,
+        title="Comparacoes selecionadas",
+        rel_name=rel_name,
+        left_title="NEF67",
+        right_title="Cursor 13",
+    )
+    nef67_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+    cursor13_panel.grid(row=0, column=1, sticky="nsew", padx=(6, 6))
+    combustion_selected_panel.grid(row=0, column=2, sticky="nsew", padx=(6, 0))
+
+    combustion_actions = ttk.Frame(combustion_tab)
+    combustion_actions.pack(fill="x", padx=12, pady=(0, 12))
+
+    def refresh_combustion_pairs() -> None:
+        refresh_combustion_selected_panel(selected_combustion_pairs)
+
+    def add_combustion_pair() -> None:
+        nef67_path = abs_lookup.get(nef67_value.get())
+        cursor13_path = abs_lookup.get(cursor13_value.get())
+        if nef67_path is None or cursor13_path is None:
+            messagebox.showwarning("Par incompleto", "Selecione um arquivo NEF67 e um arquivo Cursor 13.")
+            return
+        candidate = (nef67_path, cursor13_path)
+        if candidate in selected_combustion_pairs:
+            messagebox.showinfo("Par ja existe", "Esse par de combustao ja esta na lista.")
+            return
+        selected_combustion_pairs.append(candidate)
+        refresh_combustion_pairs()
+        refresh_selection_summary()
+
+    def remove_combustion_pair() -> None:
+        selected = combustion_selected_lookup.get(combustion_selected_value.get())
+        if selected is None:
+            return
+        nef67_path, cursor13_path = selected
+        selected_combustion_pairs[:] = [pair for pair in selected_combustion_pairs if pair != (nef67_path, cursor13_path)]
+        refresh_combustion_pairs()
+        refresh_selection_summary()
+
+    ttk.Button(combustion_actions, text="Adicionar comparacao", command=add_combustion_pair).pack(side="left")
+    ttk.Button(combustion_actions, text="Remover comparacao", command=remove_combustion_pair).pack(side="left", padx=(8, 0))
+
+    selection_summary_var = tk.StringVar(value="")
+
+    def refresh_selection_summary() -> None:
+        fuel_count = len(selected_pairs)
+        combustion_count = len(selected_combustion_pairs)
+        selection_summary_var.set(
+            f"Pares diesel/etanol: {fuel_count} | Pares de combustao: {combustion_count}"
+        )
 
     def accept() -> None:
         if not selected_pairs:
             messagebox.showwarning("Sem pares", "Adicione pelo menos um par para continuar.")
             return
-        pairs = build_selected_pairs_from_paths(selected_pairs)
-        result["pairs"] = pairs
+        if combustion_files and not selected_combustion_pairs:
+            should_continue = messagebox.askyesno(
+                "Combustao nao selecionada",
+                (
+                    "Existem arquivos com dados de combustao, mas nenhum par NEF67 vs Cursor 13 foi selecionado.\n\n"
+                    "Se continuar assim, a etapa de combustao e o popup de selecao de pontos de combustao serao pulados.\n\n"
+                    "Deseja continuar mesmo assim?"
+                ),
+                default="no",
+                parent=root,
+            )
+            if not should_continue:
+                notebook.select(combustion_tab)
+                return
+        fuel_pairs = build_selected_pairs_from_paths(selected_pairs)
+        combustion_pairs = build_selected_combustion_pairs_from_paths(selected_combustion_pairs)
+        result["fuel_pairs"] = fuel_pairs
+        result["combustion_pairs"] = combustion_pairs
         result["ok"] = True
-        save_last_pair_selection(pairs)
+        save_last_pair_selection(fuel_pairs)
+        save_last_combustion_selection(combustion_pairs)
         root.destroy()
 
     def cancel() -> None:
@@ -766,12 +1150,15 @@ def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePai
     action_bar = ttk.Frame(root)
     action_bar.pack(fill="x", padx=12, pady=(0, 12))
 
-    ttk.Button(action_bar, text="Adicionar par", command=add_pair).pack(side="left")
-    ttk.Button(action_bar, text="Remover par", command=remove_pair).pack(side="left", padx=(8, 0))
+    ttk.Label(action_bar, textvariable=selection_summary_var).pack(side="left")
     ttk.Button(action_bar, text="Cancelar", command=cancel).pack(side="right")
-    ttk.Button(action_bar, text="Rodar com estes pares", command=accept).pack(side="right", padx=(0, 8))
+    ttk.Button(action_bar, text="Rodar processamento", command=accept).pack(side="right", padx=(0, 8))
 
-    refresh_pairs()
+    refresh_fuel_pairs()
+    refresh_combustion_pairs()
+    refresh_selection_summary()
+    if selected_combustion_pairs:
+        notebook.select(combustion_tab)
     root.protocol("WM_DELETE_WINDOW", cancel)
     root.state("zoomed")
     root.mainloop()
@@ -779,20 +1166,24 @@ def select_pairs_via_gui(raw_dir: Path, files: List[Path]) -> List[FptComparePai
     if not bool(result["ok"]):
         raise SystemExit("Execucao cancelada pelo usuario na selecao de pares.")
 
-    pairs = result.get("pairs", [])
-    return list(pairs) if isinstance(pairs, list) else []
+    fuel_pairs = result.get("fuel_pairs", [])
+    combustion_pairs = result.get("combustion_pairs", [])
+    fuel_pairs_out = list(fuel_pairs) if isinstance(fuel_pairs, list) else []
+    combustion_pairs_out = list(combustion_pairs) if isinstance(combustion_pairs, list) else []
+    return fuel_pairs_out, combustion_pairs_out
 
 
-def resolve_selected_pairs(
+def resolve_processing_selections(
     *,
     raw_dir: Path,
     files: List[Path],
     pair_selection_mode: str,
-) -> List[FptComparePair]:
+    sheet_name: str,
+) -> Tuple[List[FptComparePair], List[FptCombustionPair]]:
     mode = norm_key(pair_selection_mode) or "gui"
     if mode in {"gui", "pair_gui", "pairs_gui"}:
         if tk is not None and ttk is not None and messagebox is not None:
-            return select_pairs_via_gui(raw_dir, files)
+            return select_pairs_via_gui(raw_dir, files, sheet_name=sheet_name)
         print("[WARN] Tkinter nao esta disponivel; caindo para pareamento automatico.")
         mode = "auto"
 
@@ -801,7 +1192,9 @@ def resolve_selected_pairs(
     auto_pairs = list(zip(diesel_files, ethanol_files))
     if not auto_pairs:
         raise SystemExit("Nao consegui montar pares automaticamente a partir dos arquivos encontrados.")
-    return build_selected_pairs_from_paths(auto_pairs)
+    combustion_files = [p for p in ethanol_files if has_combustion_columns(p, sheet_name=sheet_name)]
+    combustion_pairs = build_selected_combustion_pairs_from_paths(_default_combustion_pair_candidates(combustion_files))
+    return build_selected_pairs_from_paths(auto_pairs), combustion_pairs
 
 
 def parse_fuel_label(path: Path) -> Optional[str]:
@@ -850,6 +1243,7 @@ def read_fpt_xlsx(
         power_col=power_col,
         speed_col=speed_col,
     )
+    combustion_cols = resolve_combustion_columns(df)
 
     if rel_humidity_col is None:
         print(f"[WARN] {path.name}: umidade relativa nao encontrada; assumi 0% RH para a vazao volumetrica do compressor.")
@@ -860,27 +1254,33 @@ def read_fpt_xlsx(
     comp_outlet_pressure_series = _pressure_series_to_mbar(df[comp_outlet_pressure_col]) if comp_outlet_pressure_col else pd.Series(pd.NA, index=df.index)
     comp_inlet_temp_series = pd.to_numeric(df[comp_inlet_temp_col], errors="coerce") if comp_inlet_temp_col else pd.Series(pd.NA, index=df.index)
     rel_humidity_series = _humidity_series_to_pct(df[rel_humidity_col]) if rel_humidity_col else pd.Series(0.0, index=df.index)
-    out = pd.DataFrame(
-        {
-            "Pair_ID": pair_id,
-            "Pair_Label": pair_label,
-            "Source_File": path.name,
-            "Engine_Displacement_L": infer_engine_displacement_l(path.name),
-            "Fuel_Label": fuel_label,
-            "Consumo_kg_h": pd.to_numeric(df[fb_col], errors="coerce"),
-            "Power_kW": pd.to_numeric(df[p_col], errors="coerce"),
-            "Torque_Nm": pd.to_numeric(df[torque_col], errors="coerce") if torque_col else pd.NA,
-            "Speed_RPM_raw": pd.to_numeric(df[rpm_col], errors="coerce"),
-            "Air_kg_h": pd.to_numeric(df[air_col], errors="coerce") if air_col else pd.NA,
-            "P_B_Compr_rel_mbar": comp_inlet_pressure_series,
-            "P_B_IC_rel_mbar": comp_outlet_pressure_series,
-            "T_AIR_C": comp_inlet_temp_series,
-            "RH_Air_pct": rel_humidity_series,
-            "P_i_MF_mbar": pressure_series,
-            "T_i_MF_C": intake_temp_series,
-            "T_B_IC_C": pre_ic_temp_series,
-        }
-    )
+    if fuel_label == "E94H6" and not combustion_cols:
+        print(f"[INFO] {path.name}: arquivo de etanol sem colunas de combustao mapeadas.")
+
+    payload: Dict[str, object] = {
+        "Pair_ID": pair_id,
+        "Pair_Label": pair_label,
+        "Source_File": path.name,
+        "Engine_Displacement_L": infer_engine_displacement_l(path.name),
+        "Fuel_Label": fuel_label,
+        "Consumo_kg_h": pd.to_numeric(df[fb_col], errors="coerce"),
+        "Power_kW": pd.to_numeric(df[p_col], errors="coerce"),
+        "Torque_Nm": pd.to_numeric(df[torque_col], errors="coerce") if torque_col else pd.NA,
+        "Speed_RPM_raw": pd.to_numeric(df[rpm_col], errors="coerce"),
+        "Air_kg_h": pd.to_numeric(df[air_col], errors="coerce") if air_col else pd.NA,
+        "P_B_Compr_rel_mbar": comp_inlet_pressure_series,
+        "P_B_IC_rel_mbar": comp_outlet_pressure_series,
+        "T_AIR_C": comp_inlet_temp_series,
+        "RH_Air_pct": rel_humidity_series,
+        "P_i_MF_mbar": pressure_series,
+        "T_i_MF_C": intake_temp_series,
+        "T_B_IC_C": pre_ic_temp_series,
+    }
+    for target_col in COMBUSTION_COLUMN_ALIASES:
+        source_col = combustion_cols.get(target_col)
+        payload[target_col] = pd.to_numeric(df[source_col], errors="coerce") if source_col else pd.NA
+
+    out = pd.DataFrame(payload)
     out = out.dropna(subset=["Consumo_kg_h", "Power_kW", "Speed_RPM_raw"]).copy()
     out["RPM"] = out["Speed_RPM_raw"].round(rpm_round_digits)
     out = out.dropna(subset=["RPM"]).copy()
@@ -891,36 +1291,47 @@ def aggregate_curve_rows(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
 
+    tmp = df.copy()
+    for col in COMBUSTION_COLUMN_ALIASES:
+        if col not in tmp.columns:
+            tmp[col] = pd.NA
+        tmp[col] = pd.to_numeric(tmp[col], errors="coerce")
+
+    agg_spec: Dict[str, Tuple[str, str]] = {
+        "Speed_RPM": ("Speed_RPM_raw", "mean"),
+        "Engine_Displacement_L": ("Engine_Displacement_L", "max"),
+        "Power_kW": ("Power_kW", "mean"),
+        "Torque_Nm": ("Torque_Nm", "mean"),
+        "Consumo_kg_h": ("Consumo_kg_h", "mean"),
+        "Air_kg_h": ("Air_kg_h", "mean"),
+        "P_B_Compr_rel_mbar": ("P_B_Compr_rel_mbar", "mean"),
+        "P_B_IC_rel_mbar": ("P_B_IC_rel_mbar", "mean"),
+        "T_AIR_C": ("T_AIR_C", "mean"),
+        "RH_Air_pct": ("RH_Air_pct", "mean"),
+        "P_i_MF_mbar": ("P_i_MF_mbar", "mean"),
+        "T_i_MF_C": ("T_i_MF_C", "mean"),
+        "T_B_IC_C": ("T_B_IC_C", "mean"),
+        "Power_kW_sd": ("Power_kW", "std"),
+        "Torque_Nm_sd": ("Torque_Nm", "std"),
+        "Consumo_kg_h_sd": ("Consumo_kg_h", "std"),
+        "Air_kg_h_sd": ("Air_kg_h", "std"),
+        "P_B_Compr_rel_mbar_sd": ("P_B_Compr_rel_mbar", "std"),
+        "P_B_IC_rel_mbar_sd": ("P_B_IC_rel_mbar", "std"),
+        "T_AIR_C_sd": ("T_AIR_C", "std"),
+        "RH_Air_pct_sd": ("RH_Air_pct", "std"),
+        "P_i_MF_mbar_sd": ("P_i_MF_mbar", "std"),
+        "T_i_MF_C_sd": ("T_i_MF_C", "std"),
+        "T_B_IC_C_sd": ("T_B_IC_C", "std"),
+        "N_points": ("Power_kW", "count"),
+        "Source_Files": ("Source_File", lambda s: "; ".join(sorted(set(str(v) for v in s if str(v).strip())))),
+    }
+    for col in COMBUSTION_COLUMN_ALIASES:
+        agg_spec[col] = (col, "mean")
+        agg_spec[f"{col}_sd"] = (col, "std")
+
     g = (
-        df.groupby(["Pair_ID", "Pair_Label", "Fuel_Label", "RPM"], dropna=False, sort=True)
-        .agg(
-            Speed_RPM=("Speed_RPM_raw", "mean"),
-            Engine_Displacement_L=("Engine_Displacement_L", "max"),
-            Power_kW=("Power_kW", "mean"),
-            Torque_Nm=("Torque_Nm", "mean"),
-            Consumo_kg_h=("Consumo_kg_h", "mean"),
-            Air_kg_h=("Air_kg_h", "mean"),
-            P_B_Compr_rel_mbar=("P_B_Compr_rel_mbar", "mean"),
-            P_B_IC_rel_mbar=("P_B_IC_rel_mbar", "mean"),
-            T_AIR_C=("T_AIR_C", "mean"),
-            RH_Air_pct=("RH_Air_pct", "mean"),
-            P_i_MF_mbar=("P_i_MF_mbar", "mean"),
-            T_i_MF_C=("T_i_MF_C", "mean"),
-            T_B_IC_C=("T_B_IC_C", "mean"),
-            Power_kW_sd=("Power_kW", "std"),
-            Torque_Nm_sd=("Torque_Nm", "std"),
-            Consumo_kg_h_sd=("Consumo_kg_h", "std"),
-            Air_kg_h_sd=("Air_kg_h", "std"),
-            P_B_Compr_rel_mbar_sd=("P_B_Compr_rel_mbar", "std"),
-            P_B_IC_rel_mbar_sd=("P_B_IC_rel_mbar", "std"),
-            T_AIR_C_sd=("T_AIR_C", "std"),
-            RH_Air_pct_sd=("RH_Air_pct", "std"),
-            P_i_MF_mbar_sd=("P_i_MF_mbar", "std"),
-            T_i_MF_C_sd=("T_i_MF_C", "std"),
-            T_B_IC_C_sd=("T_B_IC_C", "std"),
-            N_points=("Power_kW", "count"),
-            Source_Files=("Source_File", lambda s: "; ".join(sorted(set(str(v) for v in s if str(v).strip())))),
-        )
+        tmp.groupby(["Pair_ID", "Pair_Label", "Fuel_Label", "RPM"], dropna=False, sort=True)
+        .agg(**agg_spec)
         .reset_index()
     )
     return g
@@ -1205,6 +1616,8 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
     if diesel.empty or ethanol.empty:
         return pd.DataFrame()
 
+    combustion_rename = {col: f"E94H6_{col}" for col in COMBUSTION_COLUMN_ALIASES}
+
     diesel = diesel.rename(
         columns={
             "Speed_RPM": "Diesel_Speed_RPM",
@@ -1245,6 +1658,7 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
             "Eta_v_corr_press_pct": "E94H6_Eta_v_corr_press_pct",
             "Q_intercooler_kW": "E94H6_Q_intercooler_kW",
             "n_th_pct": "E94H6_n_th_pct",
+            **combustion_rename,
         }
     )
 
@@ -1295,8 +1709,151 @@ def build_compare_table(df: pd.DataFrame) -> pd.DataFrame:
         "Economia_vs_Diesel_R_kWh",
         "Economia_vs_Diesel_R_kWh_pct",
     ]
+    cols_right.extend(combustion_rename.values())
     merged = diesel[cols_left].merge(ethanol[cols_right], on=["Pair_ID", "RPM"], how="inner")
     return merged.sort_values(["Pair_ID", "RPM"]).copy()
+
+
+def read_fpt_combustion_xlsx(
+    path: Path,
+    *,
+    combustion_pair_id: str,
+    combustion_pair_label: str,
+    engine_role: str,
+    sheet_name: str,
+    fuel_mass_col: str,
+    power_col: str,
+    speed_col: str,
+    rpm_round_digits: int,
+) -> pd.DataFrame:
+    fuel_label = parse_fuel_label(path)
+    if fuel_label != "E94H6":
+        print(f"[INFO] Pulei {path.name}: analise de combustao so usa arquivos de etanol.")
+        return pd.DataFrame()
+
+    (
+        df,
+        _fb_col,
+        _p_col,
+        rpm_col,
+        _torque_col,
+        _comp_inlet_pressure_col,
+        _comp_outlet_pressure_col,
+        _comp_inlet_temp_col,
+        _rel_humidity_col,
+        _air_col,
+        _intake_pressure_col,
+        _intake_temp_col,
+        _pre_ic_temp_col,
+    ) = load_fpt_measure_dataframe(
+        path,
+        sheet_name=sheet_name,
+        fuel_mass_col=fuel_mass_col,
+        power_col=power_col,
+        speed_col=speed_col,
+    )
+    combustion_cols = resolve_combustion_columns(df)
+    if not combustion_cols:
+        print(f"[WARN] {path.name}: nao encontrei colunas de combustao mapeadas.")
+        return pd.DataFrame()
+
+    engine_label = COMBUSTION_ENGINE_STYLES.get(engine_role, {}).get("label", engine_role)
+    payload: Dict[str, object] = {
+        "Combustion_Pair_ID": combustion_pair_id,
+        "Combustion_Pair_Label": combustion_pair_label,
+        "Engine_Role": engine_role,
+        "Engine_Label": engine_label,
+        "Source_File": path.name,
+        "Speed_RPM_raw": pd.to_numeric(df[rpm_col], errors="coerce"),
+    }
+    for target_col in COMBUSTION_COLUMN_ALIASES:
+        source_col = combustion_cols.get(target_col)
+        payload[target_col] = pd.to_numeric(df[source_col], errors="coerce") if source_col else pd.NA
+
+    out = pd.DataFrame(payload)
+    out = out.dropna(subset=["Speed_RPM_raw"]).copy()
+    out["RPM"] = out["Speed_RPM_raw"].round(rpm_round_digits)
+    out = out.dropna(subset=["RPM"]).copy()
+    out = out.dropna(subset=list(COMBUSTION_COLUMN_ALIASES.keys()), how="all").copy()
+    return out
+
+
+def aggregate_combustion_rows(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    tmp = df.copy()
+    for col in COMBUSTION_COLUMN_ALIASES:
+        if col not in tmp.columns:
+            tmp[col] = pd.NA
+        tmp[col] = pd.to_numeric(tmp[col], errors="coerce")
+
+    agg_spec: Dict[str, Tuple[str, str]] = {
+        "Speed_RPM": ("Speed_RPM_raw", "mean"),
+        "N_points": ("Speed_RPM_raw", "count"),
+        "Source_Files": ("Source_File", lambda s: "; ".join(sorted(set(str(v) for v in s if str(v).strip())))),
+    }
+    for col in COMBUSTION_COLUMN_ALIASES:
+        agg_spec[col] = (col, "mean")
+        agg_spec[f"{col}_sd"] = (col, "std")
+
+    g = (
+        tmp.groupby(
+            ["Combustion_Pair_ID", "Combustion_Pair_Label", "Engine_Role", "Engine_Label", "RPM"],
+            dropna=False,
+            sort=True,
+        )
+        .agg(**agg_spec)
+        .reset_index()
+    )
+    return g
+
+
+def build_combustion_compare_table(df: pd.DataFrame) -> pd.DataFrame:
+    left = df[df["Engine_Role"].eq("NEF67")].copy()
+    right = df[df["Engine_Role"].eq("Cursor13")].copy()
+    if left.empty or right.empty:
+        return pd.DataFrame()
+
+    left_rename = {
+        "Engine_Label": "NEF67_Engine_Label",
+        "Speed_RPM": "NEF67_Speed_RPM",
+        "N_points": "NEF67_N_points",
+        "Source_Files": "NEF67_Source_Files",
+        **{col: f"NEF67_{col}" for col in COMBUSTION_COLUMN_ALIASES},
+    }
+    right_rename = {
+        "Engine_Label": "Cursor13_Engine_Label",
+        "Speed_RPM": "Cursor13_Speed_RPM",
+        "N_points": "Cursor13_N_points",
+        "Source_Files": "Cursor13_Source_Files",
+        **{col: f"Cursor13_{col}" for col in COMBUSTION_COLUMN_ALIASES},
+    }
+    left = left.rename(columns=left_rename)
+    right = right.rename(columns=right_rename)
+
+    cols_left = [
+        "Combustion_Pair_ID",
+        "Combustion_Pair_Label",
+        "RPM",
+        "NEF67_Engine_Label",
+        "NEF67_Speed_RPM",
+        "NEF67_N_points",
+        "NEF67_Source_Files",
+    ]
+    cols_left.extend(f"NEF67_{col}" for col in COMBUSTION_COLUMN_ALIASES)
+    cols_right = [
+        "Combustion_Pair_ID",
+        "RPM",
+        "Cursor13_Engine_Label",
+        "Cursor13_Speed_RPM",
+        "Cursor13_N_points",
+        "Cursor13_Source_Files",
+    ]
+    cols_right.extend(f"Cursor13_{col}" for col in COMBUSTION_COLUMN_ALIASES)
+
+    merged = left[cols_left].merge(right[cols_right], on=["Combustion_Pair_ID", "RPM"], how="inner")
+    return merged.sort_values(["Combustion_Pair_ID", "RPM"]).copy()
 
 
 def _build_plot_point_rows(df: pd.DataFrame) -> List[Dict[str, object]]:
@@ -1619,6 +2176,327 @@ def apply_plot_point_filter(
         mask = mask | (pair_ids.eq(pair_id) & fuel_labels.eq(fuel_label) & rpms.eq(round(float(rpm_value), 6)))
     kept = int(mask.sum())
     print(f"[INFO] Filtro de pontos FPT: {kept} linha(s) mantida(s) para comparativos e plots.")
+    return df.loc[mask].copy()
+
+
+def _build_combustion_plot_point_rows(df: pd.DataFrame) -> List[Dict[str, object]]:
+    if df is None or df.empty:
+        return []
+
+    cols = [
+        "Combustion_Pair_ID",
+        "Combustion_Pair_Label",
+        "Engine_Role",
+        "Engine_Label",
+        "RPM",
+        "N_points",
+        "Source_Files",
+    ]
+    tmp = df.copy()
+    for col in cols:
+        if col not in tmp.columns:
+            tmp[col] = pd.NA
+
+    point_df = tmp[cols].copy()
+    point_df["RPM"] = pd.to_numeric(point_df["RPM"], errors="coerce")
+    point_df["N_points"] = pd.to_numeric(point_df["N_points"], errors="coerce")
+    point_df = point_df.dropna(subset=["Combustion_Pair_ID", "Engine_Role", "RPM"])
+    point_df = point_df.sort_values(["Combustion_Pair_Label", "Engine_Role", "RPM"], kind="stable")
+
+    rows: List[Dict[str, object]] = []
+    for _, row in point_df.iterrows():
+        key = _normalize_combustion_plot_point_key(
+            row.get("Combustion_Pair_ID", ""),
+            row.get("Engine_Role", ""),
+            row.get("RPM", pd.NA),
+        )
+        if key is None:
+            continue
+        rows.append(
+            {
+                "key": key,
+                "pair_id": key[0],
+                "pair_label": str(row.get("Combustion_Pair_Label", "")).strip() or key[0],
+                "engine_role": key[1],
+                "engine_label": str(row.get("Engine_Label", "")).strip() or key[1],
+                "rpm": key[2],
+                "n_points": int(_to_float(row.get("N_points", 1), default=1.0)) if np.isfinite(_to_float(row.get("N_points", 1), default=1.0)) else 1,
+                "source_files": str(row.get("Source_Files", "")).strip(),
+            }
+        )
+    return rows
+
+
+def _preferred_combustion_engine_order(labels: List[str]) -> List[str]:
+    preferred = ["NEF67", "Cursor13"]
+    uniq = [str(v).strip() for v in labels if str(v).strip()]
+    ordered = [label for label in preferred if label in uniq]
+    extras = sorted([label for label in uniq if label not in ordered], key=_canon_text)
+    return ordered + extras
+
+
+def _build_combustion_plot_point_catalog(
+    df: pd.DataFrame,
+) -> Tuple[List[Tuple[str, str]], List[float], Dict[Tuple[str, str, float], int], Dict[Tuple[str, str], str], List[str]]:
+    rows = _build_combustion_plot_point_rows(df)
+    if not rows:
+        return [], [], {}, {}, []
+
+    pair_labels: Dict[str, str] = {}
+    for row in rows:
+        pair_id = str(row["pair_id"]).strip()
+        pair_label = str(row["pair_label"]).strip() or pair_id
+        if pair_id not in pair_labels:
+            pair_labels[pair_id] = pair_label
+
+    ordered_pair_ids = sorted(pair_labels.keys(), key=lambda key: (_canon_text(pair_labels.get(key, "")), _canon_text(key)))
+    pair_aliases = {pair_id: f"P{idx + 1}" for idx, pair_id in enumerate(ordered_pair_ids)}
+
+    series_keys_set = {(str(row["pair_id"]).strip(), str(row["engine_role"]).strip()) for row in rows}
+    engine_order = {engine: idx for idx, engine in enumerate(_preferred_combustion_engine_order([engine for _, engine in series_keys_set]))}
+    series_keys = sorted(
+        series_keys_set,
+        key=lambda item: (
+            ordered_pair_ids.index(item[0]) if item[0] in ordered_pair_ids else 999,
+            engine_order.get(item[1], 999),
+            _canon_text(item[1]),
+        ),
+    )
+
+    engine_labels = {
+        str(row["engine_role"]).strip(): str(row["engine_label"]).strip() or str(row["engine_role"]).strip()
+        for row in rows
+    }
+    series_labels = {
+        series_key: f"{pair_aliases.get(series_key[0], series_key[0])}\n{engine_labels.get(series_key[1], series_key[1])}"
+        for series_key in series_keys
+    }
+    legend_lines = [f"{pair_aliases[pair_id]} = {pair_labels[pair_id]}" for pair_id in ordered_pair_ids]
+
+    rpm_values = sorted({float(row["rpm"]) for row in rows})
+    counts: Dict[Tuple[str, str, float], int] = {}
+    for row in rows:
+        key = row["key"]
+        counts[key] = int(row.get("n_points", 1) or 1)
+
+    return series_keys, rpm_values, counts, series_labels, legend_lines
+
+
+def _resolve_combustion_plot_point_initial_selection(
+    available_points: Set[Tuple[str, str, float]],
+) -> Tuple[Dict[Tuple[str, str, float], bool], str]:
+    defaults = {key: True for key in available_points}
+    state = load_last_combustion_plot_point_selection_state()
+    if state is None:
+        return defaults, "Sem ultima selecao salva para combustao. Todos os pontos vieram marcados."
+
+    saved_available = set(state.get("available_points", set()) or set())
+    saved_selected = set(state.get("selected_points", set()) or set())
+    matched = 0
+    for key in sorted(available_points):
+        if key in saved_available:
+            defaults[key] = key in saved_selected
+            matched += 1
+    if matched == 0:
+        return defaults, "Ultima selecao salva de combustao nao combinou com este conjunto. Todos os pontos vieram marcados."
+
+    new_points = available_points - saved_available
+    selected_count = sum(1 for value in defaults.values() if value)
+    message = f"Ultima selecao de combustao carregada automaticamente: {selected_count} / {len(available_points)} ponto(s) marcados."
+    if new_points:
+        message += f" {len(new_points)} ponto(s) novo(s) vieram selecionados por padrao."
+    return defaults, message
+
+
+def prompt_combustion_plot_point_filter(df: pd.DataFrame) -> Optional[Set[Tuple[str, str, float]]]:
+    series_keys, rpm_values, counts, series_labels, legend_lines = _build_combustion_plot_point_catalog(df)
+    if not series_keys or not rpm_values or not counts:
+        print("[WARN] Nao encontrei pontos para abrir o filtro de plot da combustao. Vou usar todos.")
+        return None
+    if tk is None or ttk is None or messagebox is None:
+        print("[WARN] Tkinter nao esta disponivel. Vou usar todos os pontos da combustao.")
+        return None
+
+    available_points = {key for key, count in counts.items() if count > 0}
+    initial_selection, initial_message = _resolve_combustion_plot_point_initial_selection(available_points)
+    result: Dict[str, object] = {"selected": None}
+
+    root = tk.Tk()
+    root.title("Pipeline FPT - filtro de pontos para plots de combustao")
+    root.geometry("1240x760")
+    root.minsize(1080, 640)
+
+    ttk.Label(
+        root,
+        text="Selecione os conjuntos de pontos que entram nos comparativos e plots de combustao do FPT. O lv_combustion_fpt.xlsx bruto continua completo.",
+        wraplength=1180,
+        justify="left",
+    ).pack(fill="x", padx=12, pady=(12, 4))
+    info_var = tk.StringVar(value=initial_message)
+    ttk.Label(root, textvariable=info_var, wraplength=1180, justify="left").pack(fill="x", padx=12, pady=(0, 8))
+    if legend_lines:
+        ttk.Label(
+            root,
+            text=" | ".join(legend_lines),
+            wraplength=1180,
+            justify="left",
+        ).pack(fill="x", padx=12, pady=(0, 8))
+
+    toolbar = ttk.Frame(root)
+    toolbar.pack(fill="x", padx=12, pady=(0, 8))
+    status_var = tk.StringVar(value="")
+
+    body = ttk.Frame(root)
+    body.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+    body.columnconfigure(0, weight=1)
+    body.rowconfigure(0, weight=1)
+
+    canvas = tk.Canvas(body, highlightthickness=0)
+    hscroll = ttk.Scrollbar(body, orient="horizontal", command=canvas.xview)
+    scrollbar = ttk.Scrollbar(body, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=scrollbar.set, xscrollcommand=hscroll.set)
+    canvas.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
+    hscroll.grid(row=1, column=0, sticky="ew")
+
+    inner = ttk.Frame(canvas)
+    canvas_window = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+    def sync_canvas(_event: object = None) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+        canvas.itemconfigure(canvas_window, width=max(canvas.winfo_width(), inner.winfo_reqwidth()))
+
+    inner.bind("<Configure>", sync_canvas)
+    canvas.bind("<Configure>", sync_canvas)
+
+    header_bg = "#f4f6f8"
+    cell_border = "#d7dce1"
+
+    def make_cell(row: int, column: int, *, bg: str = "white") -> tk.Frame:
+        cell = tk.Frame(
+            inner,
+            bg=bg,
+            highlightbackground=cell_border,
+            highlightthickness=1,
+            bd=0,
+            padx=3,
+            pady=0,
+        )
+        cell.grid(row=row, column=column, sticky="nsew")
+        return cell
+
+    header_cell = make_cell(0, 0, bg=header_bg)
+    ttk.Label(header_cell, text="RPM", anchor="center", justify="center").pack(fill="both", expand=True)
+
+    for col_idx, series_key in enumerate(series_keys, start=1):
+        header_cell = make_cell(0, col_idx, bg=header_bg)
+        ttk.Label(
+            header_cell,
+            text=series_labels.get(series_key, "\n".join(series_key)),
+            anchor="center",
+            justify="center",
+        ).pack(fill="both", expand=True)
+        inner.columnconfigure(col_idx, weight=1)
+
+    cell_vars: Dict[Tuple[str, str, float], tk.BooleanVar] = {}
+
+    for row_idx, rpm_value in enumerate(rpm_values, start=1):
+        rpm_cell = make_cell(row_idx, 0, bg=header_bg)
+        ttk.Label(rpm_cell, text=f"{rpm_value:.0f}", anchor="center", justify="center").pack(fill="both", expand=True)
+        for col_idx, series_key in enumerate(series_keys, start=1):
+            key = (series_key[0], series_key[1], float(rpm_value))
+            count = counts.get(key, 0)
+            if count <= 0:
+                empty_cell = make_cell(row_idx, col_idx)
+                ttk.Label(empty_cell, text="-", anchor="center").pack(fill="both", expand=True)
+                continue
+
+            var = tk.BooleanVar(value=bool(initial_selection.get(key, True)))
+            cell_vars[key] = var
+            point_cell = make_cell(row_idx, col_idx)
+            inner_frame = ttk.Frame(point_cell)
+            inner_frame.pack(fill="both", expand=True)
+            ttk.Checkbutton(inner_frame, variable=var).pack(anchor="center", pady=0)
+            ttk.Label(inner_frame, text="" if count == 1 else f"{count}x", anchor="center", justify="center").pack(anchor="center")
+
+    def selected_points_now() -> Set[Tuple[str, str, float]]:
+        return {key for key, var in cell_vars.items() if bool(var.get())}
+
+    def refresh_status() -> None:
+        selected = sum(1 for var in cell_vars.values() if bool(var.get()))
+        status_var.set(f"Pontos selecionados: {selected} / {len(cell_vars)}")
+
+    for var in cell_vars.values():
+        var.trace_add("write", lambda *_args: refresh_status())
+
+    def set_all(value: bool) -> None:
+        for var in cell_vars.values():
+            var.set(value)
+
+    def load_last_selection() -> None:
+        defaults, message = _resolve_combustion_plot_point_initial_selection(available_points)
+        for key, var in cell_vars.items():
+            var.set(bool(defaults.get(key, True)))
+        info_var.set(message)
+
+    def save_current_selection() -> None:
+        selected = selected_points_now()
+        save_last_combustion_plot_point_selection_state(selected, available_points)
+        info_var.set(f"Selecao atual de combustao salva como ultima: {len(selected)} / {len(available_points)} ponto(s) marcados.")
+
+    def confirm() -> None:
+        selected = selected_points_now()
+        if not selected:
+            messagebox.showerror("Pipeline FPT", "Selecione pelo menos um ponto de combustao para gerar os plots.", parent=root)
+            return
+        save_last_combustion_plot_point_selection_state(selected, available_points)
+        result["selected"] = selected
+        root.destroy()
+
+    def cancel() -> None:
+        root.destroy()
+
+    ttk.Button(toolbar, text="Selecionar tudo", command=lambda: set_all(True)).pack(side="left")
+    ttk.Button(toolbar, text="Limpar tudo", command=lambda: set_all(False)).pack(side="left", padx=(8, 0))
+    ttk.Button(toolbar, text="Carregar ultima", command=load_last_selection).pack(side="left", padx=(8, 0))
+    ttk.Button(toolbar, text="Salvar atual", command=save_current_selection).pack(side="left", padx=(8, 0))
+    ttk.Label(toolbar, text="Colunas = par/motor | Linhas = RPM").pack(side="left", padx=(12, 0))
+    ttk.Label(toolbar, textvariable=status_var).pack(side="right")
+    refresh_status()
+
+    buttons = ttk.Frame(root)
+    buttons.pack(fill="x", padx=12, pady=(0, 12))
+    ttk.Button(buttons, text="Cancelar", command=cancel).pack(side="right")
+    ttk.Button(buttons, text="Gerar comparativos e plots", command=confirm).pack(side="right", padx=(0, 8))
+
+    root.protocol("WM_DELETE_WINDOW", cancel)
+    root.state("zoomed")
+    root.mainloop()
+
+    selected = result.get("selected")
+    if selected is None:
+        print("[WARN] Filtro de pontos de combustao cancelado. Vou usar todos os pontos da combustao.")
+        return None
+    return set(selected)
+
+
+def apply_combustion_plot_point_filter(
+    df: pd.DataFrame,
+    selected_points: Optional[Set[Tuple[str, str, float]]],
+) -> pd.DataFrame:
+    if df is None:
+        return pd.DataFrame()
+    if df.empty or selected_points is None:
+        return df.copy()
+
+    pair_ids = df.get("Combustion_Pair_ID", pd.Series(pd.NA, index=df.index)).astype(str).str.strip()
+    engine_roles = df.get("Engine_Role", pd.Series(pd.NA, index=df.index)).astype(str).str.strip()
+    rpms = pd.to_numeric(df.get("RPM", pd.Series(pd.NA, index=df.index)), errors="coerce").round(6)
+    mask = pd.Series(False, index=df.index, dtype="bool")
+    for pair_id, engine_role, rpm_value in selected_points:
+        mask = mask | (pair_ids.eq(pair_id) & engine_roles.eq(engine_role) & rpms.eq(round(float(rpm_value), 6)))
+    kept = int(mask.sum())
+    print(f"[INFO] Filtro de pontos de combustao FPT: {kept} linha(s) mantida(s) para comparativos e plots.")
     return df.loc[mask].copy()
 
 
@@ -2129,6 +3007,202 @@ def make_plots(df: pd.DataFrame, plot_dir: Path) -> None:
     )
 
 
+def with_combustion_pair_in_title(title: str, df: pd.DataFrame) -> str:
+    if df is None or df.empty:
+        return title
+    labels = [str(value).strip() for value in df.get("Combustion_Pair_Label", pd.Series(dtype=object)).dropna().unique().tolist()]
+    if not labels:
+        return title
+    return f"{title} | {labels[0]}"
+
+
+def plot_combustion_metric(
+    df: pd.DataFrame,
+    *,
+    y_col: str,
+    title: str,
+    filename: str,
+    y_label: str,
+    plot_dir: Path,
+) -> None:
+    fig, ax = plt.subplots()
+    plot_title = with_combustion_pair_in_title(title, df)
+    any_curve = False
+    for engine_role in ["NEF67", "Cursor13"]:
+        d = df[df["Engine_Role"].eq(engine_role)].copy()
+        if d.empty or y_col not in d.columns:
+            continue
+        d["RPM"] = pd.to_numeric(d["RPM"], errors="coerce")
+        d[y_col] = pd.to_numeric(d[y_col], errors="coerce")
+        d = d.dropna(subset=["RPM", y_col]).sort_values("RPM")
+        if d.empty:
+            continue
+        style = COMBUSTION_ENGINE_STYLES.get(engine_role, {})
+        any_curve = True
+        ax.plot(
+            d["RPM"],
+            d[y_col],
+            "o-",
+            linewidth=1.8,
+            markersize=4.8,
+            color=style.get("color", "#333333"),
+            label=style.get("label", engine_role),
+        )
+
+    if not any_curve:
+        plt.close(fig)
+        print(f"[WARN] Sem dados para {filename}")
+        return
+
+    _style_axes(fig, ax, x_values=df["RPM"], title=plot_title, y_label=y_label)
+    outpath = plot_dir / filename
+    fig.savefig(outpath, dpi=200)
+    plt.close(fig)
+    print(f"[OK] Salvei {outpath}")
+
+
+def make_combustion_plots(df: pd.DataFrame, plot_dir: Path) -> None:
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    for spec in COMBUSTION_PLOT_SPECS:
+        plot_combustion_metric(
+            df,
+            y_col=spec["column"],
+            title=spec["title"],
+            filename=spec["filename"],
+            y_label=spec["y_label"],
+            plot_dir=plot_dir,
+        )
+
+
+def _list_combustion_output_artifacts(out_dir: Path) -> List[Path]:
+    artifacts: List[Path] = []
+    for pattern in [
+        "lv_combustion_fpt.xlsx",
+        "compare_rpm_combustion_nef67_vs_cursor13_fpt.xlsx",
+        "compare_combustion_*.xlsx",
+    ]:
+        artifacts.extend(path for path in out_dir.glob(pattern) if path.is_file())
+
+    plot_dir = out_dir / "plots_combustion"
+    if plot_dir.exists():
+        artifacts.extend(path for path in plot_dir.rglob("*") if path.is_file())
+
+    uniq: Dict[str, Path] = {}
+    for path in artifacts:
+        uniq[str(path.resolve())] = path
+    return sorted(uniq.values(), key=lambda path: (_canon_text(str(path)), str(path)))
+
+
+def _report_combustion_stage_not_updated(out_dir: Path, reason: str) -> None:
+    artifacts = _list_combustion_output_artifacts(out_dir)
+    if not artifacts:
+        print(reason)
+        return
+
+    latest = max(path.stat().st_mtime for path in artifacts)
+    latest_text = pd.Timestamp(latest, unit="s").strftime("%Y-%m-%d %H:%M:%S")
+    print(
+        f"{reason} Ja existem {len(artifacts)} artefato(s) antigos de combustao em "
+        f"{out_dir}. Eles nao foram atualizados nesta rodada. Ultima modificacao detectada: {latest_text}."
+    )
+
+
+def run_combustion_analysis(
+    *,
+    selected_combustion_pairs: List[FptCombustionPair],
+    out_dir: Path,
+    sheet_name: str,
+    fuel_mass_col: str,
+    power_col: str,
+    speed_col: str,
+    rpm_round_digits: int,
+    combustion_plot_point_filter_mode: str,
+) -> None:
+    if not selected_combustion_pairs:
+        _report_combustion_stage_not_updated(
+            out_dir,
+            "[INFO] Nenhum par de combustao selecionado. Vou pular esta etapa.",
+        )
+        return
+
+    combustion_plot_dir = out_dir / "plots_combustion"
+    combustion_plot_dir.mkdir(parents=True, exist_ok=True)
+
+    all_rows: List[pd.DataFrame] = []
+    for pair in selected_combustion_pairs:
+        pair_sources = [("NEF67", pair.nef67_path), ("Cursor13", pair.cursor13_path)]
+        for engine_role, path in pair_sources:
+            try:
+                df_i = read_fpt_combustion_xlsx(
+                    path,
+                    combustion_pair_id=pair.pair_id,
+                    combustion_pair_label=pair.pair_label,
+                    engine_role=engine_role,
+                    sheet_name=sheet_name,
+                    fuel_mass_col=fuel_mass_col,
+                    power_col=power_col,
+                    speed_col=speed_col,
+                    rpm_round_digits=rpm_round_digits,
+                )
+                if not df_i.empty:
+                    all_rows.append(df_i)
+            except Exception as exc:
+                print(f"[ERROR] Falha lendo combustao de {path.name}: {exc}")
+
+    if not all_rows:
+        _report_combustion_stage_not_updated(
+            out_dir,
+            "[WARN] Nenhum dado de combustao valido foi lido.",
+        )
+        return
+
+    agg_df = aggregate_combustion_rows(pd.concat(all_rows, ignore_index=True))
+    if agg_df.empty:
+        _report_combustion_stage_not_updated(
+            out_dir,
+            "[WARN] Nao consegui consolidar dados de combustao.",
+        )
+        return
+
+    kpi_path = safe_to_excel(
+        agg_df.sort_values(["Combustion_Pair_ID", "Engine_Role", "RPM"]).copy(),
+        out_dir / "lv_combustion_fpt.xlsx",
+    )
+    print(f"[OK] KPI de combustao salvo: {kpi_path}")
+
+    plot_df = agg_df.copy()
+    if norm_key(combustion_plot_point_filter_mode) not in {"off", "skip", "none", "0", "false"}:
+        selected_plot_points = prompt_combustion_plot_point_filter(agg_df)
+        plot_df = apply_combustion_plot_point_filter(agg_df, selected_plot_points)
+    else:
+        print("[INFO] Filtro de pontos de combustao FPT desativado por configuracao.")
+
+    compare_df = build_combustion_compare_table(plot_df)
+    if not compare_df.empty:
+        cmp_path = safe_to_excel(compare_df, out_dir / "compare_rpm_combustion_nef67_vs_cursor13_fpt.xlsx")
+        print(f"[OK] Comparativo de combustao salvo: {cmp_path}")
+
+    pair_ids = [pair.pair_id for pair in selected_combustion_pairs]
+    if len(pair_ids) == 1:
+        make_combustion_plots(plot_df, plot_dir=combustion_plot_dir)
+        if not compare_df.empty:
+            single_cmp_path = safe_to_excel(compare_df, out_dir / f"compare_combustion_{pair_ids[0]}.xlsx")
+            print(f"[OK] Comparativo do par de combustao salvo: {single_cmp_path}")
+        return
+
+    for pair in selected_combustion_pairs:
+        pair_df = plot_df[plot_df["Combustion_Pair_ID"].eq(pair.pair_id)].copy()
+        if pair_df.empty:
+            continue
+        pair_plot_dir = combustion_plot_dir / pair.pair_id
+        make_combustion_plots(pair_df, plot_dir=pair_plot_dir)
+        pair_compare_df = build_combustion_compare_table(pair_df)
+        if pair_compare_df.empty:
+            continue
+        pair_cmp_path = safe_to_excel(pair_compare_df, out_dir / f"compare_combustion_{pair.pair_id}.xlsx")
+        print(f"[OK] Comparativo do par de combustao salvo: {pair_cmp_path}")
+
+
 def main() -> None:
     config_path = DEFAULT_CONFIG_PATH
     if not config_path.exists():
@@ -2149,6 +3223,9 @@ def main() -> None:
     rpm_round_digits = int(_to_float(defaults_cfg.get(norm_key("RPM_ROUND_DIGITS"), "0"), default=0.0))
     pair_selection_mode = defaults_cfg.get(norm_key("PAIR_SELECTION_MODE"), "gui") or "gui"
     plot_point_filter_mode = defaults_cfg.get(norm_key("PLOT_POINT_FILTER_MODE"), "gui") or "gui"
+    combustion_plot_point_filter_mode = (
+        defaults_cfg.get(norm_key("COMBUSTION_PLOT_POINT_FILTER_MODE"), plot_point_filter_mode) or plot_point_filter_mode
+    )
 
     all_files = discover_input_files(raw_dir, "")
     filtered_files = discover_input_files(raw_dir, include_regex)
@@ -2159,7 +3236,12 @@ def main() -> None:
     if not selector_files:
         raise SystemExit(f"Nenhum .xlsx disponivel para o modo '{pair_selection_mode}' com regex '{include_regex}'.")
 
-    selected_pairs = resolve_selected_pairs(raw_dir=raw_dir, files=selector_files, pair_selection_mode=pair_selection_mode)
+    selected_pairs, selected_combustion_pairs = resolve_processing_selections(
+        raw_dir=raw_dir,
+        files=selector_files,
+        pair_selection_mode=pair_selection_mode,
+        sheet_name=sheet_name,
+    )
     selected_paths: List[Path] = []
     for pair in selected_pairs:
         selected_paths.extend([pair.diesel_path, pair.ethanol_path])
@@ -2173,6 +3255,16 @@ def main() -> None:
         seen_paths.add(resolved)
         unique_selected_files.append(path)
 
+    combustion_selected_files: List[Path] = []
+    combustion_seen_paths: set[Path] = set()
+    for pair in selected_combustion_pairs:
+        for path in [pair.nef67_path, pair.cursor13_path]:
+            resolved = path.resolve()
+            if resolved in combustion_seen_paths:
+                continue
+            combustion_seen_paths.add(resolved)
+            combustion_selected_files.append(path)
+
     print(f"[INFO] Config: {config_path}")
     print(f"[INFO] RAW: {raw_dir}")
     print(f"[INFO] OUT: {out_dir}")
@@ -2183,9 +3275,16 @@ def main() -> None:
     print(f"[INFO] Pares selecionados: {len(selected_pairs)}")
     for pair in selected_pairs:
         print(f"[INFO]   - {pair.pair_label}")
+    print(f"[INFO] Pares de combustao selecionados: {len(selected_combustion_pairs)}")
+    for pair in selected_combustion_pairs:
+        print(f"[INFO]   - {pair.pair_label}")
     print(f"[INFO] Arquivos usados: {len(unique_selected_files)}")
     for path in unique_selected_files:
         print(f"[INFO]   - {path.name}")
+    if combustion_selected_files:
+        print(f"[INFO] Arquivos usados na combustao: {len(combustion_selected_files)}")
+        for path in combustion_selected_files:
+            print(f"[INFO]   - {path.name}")
 
     all_rows: List[pd.DataFrame] = []
     for pair in selected_pairs:
@@ -2245,6 +3344,17 @@ def main() -> None:
                 pair_cmp_path = safe_to_excel(pair_compare_df, out_dir / f"compare_{pair.pair_id}.xlsx")
                 print(f"[OK] Comparativo do par salvo: {pair_cmp_path}")
             make_plots(pair_df, plot_dir=pair_plot_dir)
+
+    run_combustion_analysis(
+        selected_combustion_pairs=selected_combustion_pairs,
+        out_dir=out_dir,
+        sheet_name=sheet_name,
+        fuel_mass_col=fuel_mass_col,
+        power_col=power_col,
+        speed_col=speed_col,
+        rpm_round_digits=rpm_round_digits,
+        combustion_plot_point_filter_mode=combustion_plot_point_filter_mode,
+    )
 
 
 if __name__ == "__main__":
